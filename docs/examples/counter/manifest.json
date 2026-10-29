@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.example.counter",
+  "name": "Local Counter",
+  "version": "1.0.0",
+  "widgets": [
+    {
+      "id": "counter",
+      "name": "Counter",
+      "description": "A minimal local Cork widget with per-instance state.",
+      "entry": "index.html",
+      "width": 230,
+      "height": 160
+    }
+  ]
+}

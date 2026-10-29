@@ -1,0 +1,21 @@
+.build/
+build/
+.DS_Store
+.swiftpm/
+__pycache__/
+*.pyc
+
+# Local configuration and personal state
+.env
+.env.*
+!.env.example
+collection.json
+collection.previous.json
+wallpapers.json
+wallpapers.previous.json
+board.json
+board.previous.json
+Collections/
+Images/
+Wallpapers/
+Captures/
