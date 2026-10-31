@@ -26,6 +26,11 @@ enum GreedyPacking {
         var fresh: Bool = true
         var source: String = ""
         var affinity: Double = 1
+        var colourGroup: Int? = nil
+        var colourWeights: [Double]? = nil
+        var effectiveColourWeights: [Double]? {
+            colourWeights ?? colourGroup.map { $0 == 0 ? [1, 0] : [0, 1] }
+        }
     }
     struct Placement: Sendable {
         var candidate: Candidate
@@ -101,11 +106,13 @@ enum GreedyPacking {
     /// seeded size/placement variants by coverage and the largest remaining rectangle.
     static func pack(candidates: [Candidate], free initial: [Rect], target: Int, gap: Double,
                      availableArea: Double, variant: Int, minimum: Double = 100, mixStyles: Bool = false,
-                     sourceLimit: Int? = nil, initialSources: [String: Int] = [:]) -> Result {
+                     sourceLimit: Int? = nil, initialSources: [String: Int] = [:],
+                     balanceColours: Bool = false, initialColourAreas: [Int: Double] = [:]) -> Result {
         var result = Result(free: initial)
         var unused = candidates
         var styles: [PrintStyle: Int] = [:]
         var sources = initialSources
+        var colourAreas = initialColourAreas
         let diverse = sourceLimit != nil
         let minimumSources = min(4, target + initialSources.count, Set(candidates.map(\.source)).count)
         let padding = gap / 2 + 2
@@ -146,8 +153,15 @@ enum GreedyPacking {
                             + ((space.height - bh > 1 && space.height - bh < minimum * 0.7) ? 0.1 : 0)
                         let variety = 1 / Double(1 + (styles[candidate.style] ?? 0))
                         let sourceVariety = diverse ? 0.18 / Double(1 + (sources[candidate.source] ?? 0)) : 0
+                        var colourBalance = 1.0
+                        if balanceColours, let weights = candidate.effectiveColourWeights {
+                            let first = colourAreas[0] ?? 0, second = colourAreas[1] ?? 0
+                            // Balance visible area, including kept prints, without defeating aspect-ratio fitting.
+                            colourBalance = 1 + 0.55 * (second - first) / max(average, first + second)
+                                * (weights[0] - weights[1]) / max(0.01, weights[0] + weights[1])
+                        }
                         let score = bw * bh * (1 + 0.20 * edge + 0.22 * fill + 0.08 * variety
-                                                + sourceVariety + (candidate.fresh ? 0.06 : 0) + candidate.affinity * 0.85 - smallRemainder)
+                                                + sourceVariety + (candidate.fresh ? 0.06 : 0) + candidate.affinity * 0.85 - smallRemainder) * colourBalance
                         if score > bestScore {
                             let corner = (variant + offset) % 4
                             let box = Rect(x: corner == 1 || corner == 3 ? space.maxX - bw : space.x,
@@ -162,6 +176,9 @@ enum GreedyPacking {
             guard let best else { break }
             result.placements.append(best); styles[best.candidate.style, default: 0] += 1
             sources[best.candidate.source, default: 0] += 1
+            if let weights = best.candidate.effectiveColourWeights {
+                for group in 0..<2 { colourAreas[group, default: 0] += best.box.area * weights[group] }
+            }
             unused.removeAll { $0.index == best.candidate.index }
             result.free = subtract(best.box, from: result.free)
         }

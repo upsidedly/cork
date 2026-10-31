@@ -11,9 +11,14 @@ final class CorkController {
     private(set) var editing = false
     private(set) var collection = PhotoCollection()
     private(set) var wallpapers = WallpaperCollection()
+    private(set) var classifyingColours = false
+    private(set) var colourClassificationError: String?
     private(set) var widgets = WidgetRegistry()
+    private(set) var favourites = FavouriteBoards()
+    @ObservationIgnored let scheduleDriver = WallScheduleDriver()
     var selection: UUID?
     var errorMessage: String?
+    var showsWelcome = false
     var defaultStyle: PrintStyle { board.desktop.defaultImageStyle }
     var screenAccess = CGPreflightScreenCaptureAccess()
     private(set) var loginItemState = SMAppService.mainApp.status
@@ -34,6 +39,8 @@ final class CorkController {
     @ObservationIgnored let environment = DesktopEnvironment(wallpapers: CorkPaths.dataDirectory.appendingPathComponent("Wallpapers"))
     @ObservationIgnored let controls = DesktopControls()
     @ObservationIgnored private var actionTask: Task<Void, Never>?
+    @ObservationIgnored private var colourTask: Task<Void, Never>?
+    @ObservationIgnored private var colourGeneration = UUID()
     @ObservationIgnored private var displayTask: Task<Void, Never>?
     @ObservationIgnored private var observedDisplays: [DisplayInfo] = []
     @ObservationIgnored private var displayGeneration = 0
@@ -71,6 +78,9 @@ final class CorkController {
             }
             self.onChange?()
         }
+        scheduleDriver.canRun = { [weak self] in guard let self else { return false }; return self.canRollWall && !self.editing }
+        scheduleDriver.onFire = { [weak self] schedule in try await self?.scheduledRoll(schedule) }
+        scheduleDriver.onChange = { [weak self] in self?.onChange?() }
     }
 
     func start() async throws {
@@ -87,14 +97,49 @@ final class CorkController {
         } catch { errorMessage = [errorMessage, error.localizedDescription].compactMap { $0 }.joined(separator: "\n") }
         do { widgets = try await repository.loadWidgets() }
         catch { errorMessage = [errorMessage, error.localizedDescription].compactMap { $0 }.joined(separator: "\n") }
+        do { favourites = try await repository.loadFavourites() }
+        catch { errorMessage = "Cork could not read favourite boards. Your current wall is preserved. \(error.localizedDescription)" }
+        showsWelcome = board.items.isEmpty && collection.photos.isEmpty && !UserDefaults.standard.bool(forKey: "CorkWelcomeComplete")
         ready = true; refresh()
         observedDisplays = board.layoutDisplays ?? []
         displaysChanged()
+        classifyColours()
+    }
+
+    func classifyColours() {
+        colourTask?.cancel(); colourGeneration = UUID()
+        let generation = colourGeneration
+        colourClassificationError = nil
+        guard collection.photos.contains(where: { $0.colourProfile == nil }) || wallpapers.wallpapers.contains(where: { $0.colourProfile == nil }) else {
+            classifyingColours = false; colourTask = nil; return
+        }
+        classifyingColours = true
+        colourTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.colourGeneration == generation { self.classifyingColours = false; self.colourTask = nil; self.onChange?() }
+            }
+            do {
+                let result = try await self.repository.classifyColours()
+                try Task.checkCancellation()
+                guard self.colourGeneration == generation else { return }
+                self.collection = result.0; self.wallpapers = result.1
+            } catch is CancellationError { }
+            catch { if self.colourGeneration == generation { self.colourClassificationError = error.localizedDescription } }
+        }
+    }
+    private func cancelColourClassification() {
+        colourTask?.cancel(); colourGeneration = UUID(); classifyingColours = false
+    }
+    func matchingColourPhotos() -> [CollectionPhoto] {
+        guard let pair = board.desktop.sceneOptions.colourPair else { return [] }
+        return collection.photos.filter { $0.colourProfile?.matches(pair, strength: board.desktop.sceneOptions.selectedStrength) == true }
     }
 
     func refresh() {
         environment.apply(board.desktop)
         controls.apply(board.desktop.desktopControls)
+        scheduleDriver.apply(board.desktop.randomizationSchedule ?? RandomizationSchedule())
         if !environment.loading { desktop.refresh(board: board, editing: editing, selection: selection, baseLevel: environment.printLevel) }
         onChange?()
     }
@@ -113,13 +158,15 @@ final class CorkController {
             actionTask = nil
         }
     }
-    var hasPendingWork: Bool { busy || actionTask != nil || displayTask != nil || !widgetSaves.isEmpty || controls.minimizing }
+    var hasPendingWork: Bool { busy || actionTask != nil || colourTask != nil || displayTask != nil || !widgetSaves.isEmpty || controls.minimizing || scheduleDriver.running }
     func finishPendingWork() async {
+        colourTask?.cancel(); await colourTask?.value
         await actionTask?.value
         await displayTask?.value
         for task in Array(widgetSaves.values) { await task.value }
         if busy { await withCheckedContinuation { idleWaiters.append($0) } }
         await controls.finish()
+        await scheduleDriver.finish()
     }
     private func finishedSaving() {
         busy = false
@@ -127,7 +174,68 @@ final class CorkController {
         for waiter in waiters { waiter.resume() }
         onChange?()
     }
-    func stop() { actionTask?.cancel(); displayTask?.cancel(); for task in widgetSaves.values { task.cancel() }; controls.stop(); desktop.close(); environment.stop() }
+    func stop() { scheduleDriver.stop(); colourTask?.cancel(); actionTask?.cancel(); displayTask?.cancel(); for task in widgetSaves.values { task.cancel() }; controls.stop(); desktop.close(); environment.stop() }
+
+    @discardableResult func saveFavourite(name: String, expectedRevision: Int? = nil) async throws -> FavouriteBoard {
+        guard ready, !busy else { throw CorkError("Wait for the current save to finish.") }
+        if let expectedRevision, expectedRevision != board.revision { throw CorkError("The wall changed. Refresh before saving it.") }
+        let value = FavouriteBoard(board: board, name: name.trimmingCharacters(in: .whitespacesAndNewlines))
+        try value.validate(); var next = favourites; next.boards.append(value)
+        busy = true; defer { finishedSaving() }
+        try await repository.saveFavourites(next); favourites = next; return value
+    }
+    func removeFavourite(_ id: UUID) async throws {
+        guard ready, !busy else { throw CorkError("Wait for the current save to finish.") }
+        var next = favourites; next.boards.removeAll { $0.id == id }
+        busy = true; defer { finishedSaving() }
+        try await repository.saveFavourites(next); favourites = next
+    }
+    func loadFavourite(_ id: UUID, expectedRevision: Int? = nil) async throws {
+        guard let value = favourites.boards.first(where: { $0.id == id }) else { throw CorkError("This favourite no longer exists.") }
+        try await transact(expectedRevision: expectedRevision) {
+            let restored = try value.restoring(into: self.board), displays = self.displays
+            try await self.repository.validateFavouriteMedia(value)
+            let collection = self.collection, wallpapers = self.wallpapers
+            let work = Task.detached(priority: .userInitiated) { try DisplayAdaptation.fit(restored, displays: displays, collection: collection, wallpapers: wallpapers) }
+            return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        }
+    }
+    func setSchedule(_ value: RandomizationSchedule, expectedRevision: Int? = nil) async throws {
+        let armed = try value.armed(after: Date())
+        try await transact(expectedRevision: expectedRevision) { var next = self.board; next.desktop.randomizationSchedule = armed; return next }
+    }
+    func completeWelcome(hideFiles: Bool, login: Bool, importPinterest: Bool) async throws {
+        try await setDesktop(hideFiles: hideFiles)
+        if login { try registerLogin(true) }
+        UserDefaults.standard.set(true, forKey: "CorkWelcomeComplete"); showsWelcome = false
+        if importPinterest { try await launchImporter() }
+    }
+    func launchImporter() async throws {
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Cork Importer.app")
+        guard FileManager.default.fileExists(atPath: url.path) else { throw CorkError("Cork Importer is missing from this build. Install the complete Cork release or rebuild with scripts/build.sh.") }
+        let config = NSWorkspace.OpenConfiguration()
+        config.environment = ProcessInfo.processInfo.environment.filter { ["CORK_DATA_DIR", "CORK_SOCKET", "CORK_IMPORT_DATA_DIR"].contains($0.key) }
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
+    }
+    func scheduleTimeChanged() {
+        guard let schedule = board.desktop.randomizationSchedule, schedule.enabled else { return }
+        if [.day, .week, .morningEvening].contains(schedule.frequency) {
+            run { try await self.setSchedule(schedule) }
+        } else { scheduleDriver.wake() }
+    }
+    private func scheduledRoll(_ expected: RandomizationSchedule) async throws {
+        guard board.desktop.randomizationSchedule == expected else { return }
+        do { try await rollWall(scheduled: true) }
+        catch {
+            let problem = error
+            if !busy && board.desktop.randomizationSchedule == expected {
+                try await transact(recordHistory: false) {
+                    var next = self.board; next.desktop.randomizationSchedule = try expected.armed(after: Date()); return next
+                }
+            }
+            throw problem
+        }
+    }
 
     func persistWidgetState(_ id: UUID, state: JSONValue) {
         guard let item = board.items.first(where: { $0.id == id }), item.widgetState != state else { return }
@@ -188,6 +296,7 @@ final class CorkController {
             defer { if self.displayGeneration == generation { self.displayTask = nil } }
             do {
                 try await Task.sleep(for: .milliseconds(120))
+                if self.board.desktop.sceneOptions.colourPair != nil { await self.colourTask?.value }
                 await self.actionTask?.value
                 if self.busy { await withCheckedContinuation { self.idleWaiters.append($0) } }
                 try Task.checkCancellation()
@@ -262,10 +371,11 @@ final class CorkController {
                 let width = min(280, display.safeWidth * 0.4)
                 let size = defaultStyle.printSize(imageWidth: asset.width, imageHeight: asset.height, width: width)
                 let displacement = Double((next.items.count + offset) % 8) * 25
-                next.items.append(PrintItem(assetFile: asset.file, title: asset.title, style: defaultStyle,
+                var item = PrintItem(assetFile: asset.file, title: asset.title, style: defaultStyle,
                     x: display.safeX + 40 + displacement, y: display.safeY + 35 + displacement,
                     width: size.0, height: size.1, displayID: display.id,
-                    zIndex: (next.items.map(\.zIndex).max() ?? -1) + 1, imageWidth: asset.width, imageHeight: asset.height))
+                    zIndex: (next.items.map(\.zIndex).max() ?? -1) + 1, imageWidth: asset.width, imageHeight: asset.height)
+                item.colourProfile = asset.colourProfile; next.items.append(item)
             }
             return next
         }
@@ -281,10 +391,19 @@ final class CorkController {
         }
     }
 
-    var canRollWall: Bool { ready && !busy && !collection.eligibleThemes.isEmpty }
+    var canRollWall: Bool {
+        guard ready, !busy else { return false }
+        if let pair = board.desktop.sceneOptions.colourPair, board.desktop.sceneOptions.matchColours {
+            guard !classifyingColours else { return false }
+            let matches = matchingColourPhotos()
+            return matches.count >= 6 && pair.allSatisfy { family in matches.contains { ($0.colourProfile?.coverage(family) ?? 0) >= board.desktop.sceneOptions.selectedStrength.minimumCoverage } }
+        }
+        return !collection.eligibleThemes.isEmpty
+    }
     func importCollection(at path: String) async throws {
         guard ready, !busy else { throw CorkError("Wait for the current save to finish.") }
-        busy = true; defer { finishedSaving() }
+        cancelColourClassification()
+        busy = true; defer { finishedSaving(); classifyColours() }
         collection = try await repository.importCollection(at: path)
         refresh()
     }
@@ -300,11 +419,14 @@ final class CorkController {
         try await setDesktop(rotationTheme: id)
     }
     func rollWall(themeID: String? = nil, seed: UInt64? = nil, displayID: UInt32? = nil, expectedRevision: Int? = nil,
-                  fillEmpty: Bool = false, paletteID: String? = nil, colourAware: Bool? = nil) async throws {
+                  fillEmpty: Bool = false, paletteID: String? = nil, colourAware: Bool? = nil, scheduled: Bool = false) async throws {
         guard let display = displays.first(where: { $0.id == displayID }) ?? (displayID == nil ? displays.first : nil) else { throw CorkError("This display is not available.") }
         let requested = themeID ?? board.desktop.rotationTheme
         let selected = requested == "auto" ? nil : requested
         let seed = seed ?? UInt64.random(in: 0...UInt64(Int32.max))
+        if classifyingColours && board.desktop.sceneOptions.colourPair != nil && paletteID == nil && (colourAware ?? board.desktop.sceneOptions.matchColours) {
+            throw CorkError("Cork is classifying the saved images. Wait for colour analysis to finish, then roll again.")
+        }
         try await transact(expectedRevision: expectedRevision) {
             var board = self.board
             let collection = self.collection, wallpapers = self.wallpapers
@@ -315,6 +437,12 @@ final class CorkController {
                         board.items[index].colours = try await self.repository.imageColours(assetFile: item.assetFile)
                     }
                 }
+                if board.desktop.sceneOptions.colourPair != nil {
+                    for index in board.items.indices where board.items[index].kind == .image && (fillEmpty || board.items[index].isKept) && board.items[index].colourProfile == nil {
+                        let item = board.items[index]
+                        if self.collectionPhoto(for: item)?.colourProfile == nil { board.items[index].colourProfile = try await self.repository.imageColourProfile(assetFile: item.assetFile) }
+                    }
+                }
             }
             let snapshot = board
             let packing = Task.detached(priority: .userInitiated) {
@@ -323,13 +451,16 @@ final class CorkController {
                 return try WallRotation.roll(snapshot, collection: collection, display: display, themeID: selected,
                     seed: seed, wallpapers: wallpapers, paletteID: paletteID, colourAware: colourAware)
             }
-            return try await withTaskCancellationHandler { try await packing.value } onCancel: { packing.cancel() }
+            var result = try await withTaskCancellationHandler { try await packing.value } onCancel: { packing.cancel() }
+            if scheduled, let schedule = result.desktop.randomizationSchedule { result.desktop.randomizationSchedule = try schedule.armed(after: Date()) }
+            return result
         }
         editing = false; selection = nil; refresh()
     }
     func importWallpapers(at path: String) async throws {
         guard ready, !busy else { throw CorkError("Wait for the current save to finish.") }
-        busy = true; defer { finishedSaving() }
+        cancelColourClassification()
+        busy = true; defer { finishedSaving(); classifyColours() }
         wallpapers = try await repository.importWallpapers(at: path); refresh()
     }
     func chooseWallpapers() {
@@ -344,21 +475,41 @@ final class CorkController {
         var value: [String: JSONValue] = ["wallpaper_count": .number(Double(wallpapers.wallpapers.count)),
             "ready_for_display": .number(Double(wallpapers.wallpapers.filter { item in displays.contains(where: item.supports) }.count)),
             "active_palette": try board.rotation?.scheme.map(JSONValue.encode) ?? .null]
-        if includeMetadata { value["wallpapers"] = try JSONValue.encode(wallpapers.wallpapers); value["palettes"] = try JSONValue.encode(ScenePalettes.all) }
+        if includeMetadata { value["wallpapers"] = try JSONValue.encode(wallpapers.wallpapers); value["palettes"] = try JSONValue.encode(ScenePalettes.all); value["colour_families"] = colourFamiliesDescription() }
         return .object(value)
     }
-    func collectionDescription(includeMetadata: Bool = false) throws -> JSONValue {
+    func collectionDescription(includeMetadata: Bool = false, offset: Int = 0, limit: Int = 500, ids: [String]? = nil, sourceURLs: [String]? = nil) throws -> JSONValue {
+        guard offset >= 0, (1...500).contains(limit), (ids?.count ?? 0) <= 200, (sourceURLs?.count ?? 0) <= 200 else { throw CorkError("Collection pages use offset ≥ 0, limit 1–500, and up to 200 IDs or source URLs.") }
+        let selected = collection.photos.filter { photo in
+            (ids == nil && sourceURLs == nil) || ids?.contains(photo.id) == true || sourceURLs?.contains(photo.sourceURL) == true
+        }
         var value: [String: JSONValue] = [
             "photo_count": .number(Double(collection.photos.count)),
+            "capacity": .number(Double(PhotoCollection.maximumPhotos)),
+            "matched_ids": .array(selected.dropFirst(offset).prefix(limit).map { .string($0.id) }),
+            "offset": .number(Double(offset)), "has_more": .bool(offset < selected.count && selected.count - offset > limit),
             "themes": .array(collection.themes.map { theme in
                 .object(["id": .string(theme.id), "name": .string(theme.name), "description": .string(theme.description),
                          "photo_count": .number(Double(collection.photos.filter { $0.themeIDs.contains(theme.id) }.count)),
                          "available": .bool(collection.eligibleThemes.contains(where: { $0.id == theme.id }))])
             }),
-            "metadata_path": .string(repository.root.appendingPathComponent("collection.json").path)
+            "metadata_path": .string(repository.root.appendingPathComponent("collection.json").path),
+            "colour_families": colourFamiliesDescription(),
+            "colour_classification": .object(["running": .bool(classifyingColours),
+                "classified_photos": .number(Double(collection.photos.filter { $0.colourProfile != nil }.count)),
+                "classified_wallpapers": .number(Double(wallpapers.wallpapers.filter { $0.colourProfile != nil }.count)),
+                "error": colourClassificationError.map(JSONValue.string) ?? .null])
         ]
-        if includeMetadata { value["photos"] = try JSONValue.encode(collection.photos) }
+        if includeMetadata { value["photos"] = try JSONValue.encode(Array(selected.dropFirst(offset).prefix(limit))) }
         return .object(value)
+    }
+    private func colourFamiliesDescription() -> JSONValue {
+        .array(ColourFamily.allCases.map { family in
+            let strong = collection.photos.filter { ($0.colourProfile?.coverage(family) ?? 0) >= 0.18 }.count
+            let weak = collection.photos.filter { let value = $0.colourProfile?.coverage(family) ?? 0; return value >= 0.04 && value < 0.18 }.count
+            return .object(["id": .string(family.rawValue), "name": .string(family.name), "hex": .string(family.hex),
+                "strong_photos": .number(Double(strong)), "accent_photos": .number(Double(weak))])
+        })
     }
 
     func addNote() {
@@ -462,8 +613,10 @@ final class CorkController {
     }
     func setDesktop(hideFiles: Bool? = nil, kind: WallpaperKind? = nil, path: String? = nil,
                     paused: Bool? = nil, defaultStyle: PrintStyle? = nil, rotationTheme: String? = nil, expectedRevision: Int? = nil,
-                    hideWidgets: Bool? = nil, matchColours: Bool? = nil, matchWallpaper: Bool? = nil, paletteID: String? = nil) async throws {
+                    hideWidgets: Bool? = nil, matchColours: Bool? = nil, matchWallpaper: Bool? = nil, paletteID: String? = nil,
+                    colourPair: [ColourFamily]? = nil, colourStrength: ColourSelectionStrength? = nil) async throws {
         if path != nil && (kind == nil || kind == .system) { throw CorkError("Choose image or video when importing a wallpaper path.") }
+        if colourPair != nil && paletteID != nil { throw CorkError("Choose a palette or two colours, not both.") }
         if let rotationTheme, rotationTheme != "auto", !collection.eligibleThemes.contains(where: { $0.id == rotationTheme }) {
             throw CorkError("Choose an available mood with at least eight photos.")
         }
@@ -471,11 +624,13 @@ final class CorkController {
             var next = self.board
             if let hideFiles { next.desktop.hideDesktopFiles = hideFiles }
             if let hideWidgets { next.desktop.hideWidgets = hideWidgets }
-            if kind != nil || matchColours != nil || matchWallpaper != nil || paletteID != nil {
+            if kind != nil || matchColours != nil || matchWallpaper != nil || paletteID != nil || colourPair != nil || colourStrength != nil {
                 var options = next.desktop.sceneOptions
                 if let matchColours { options.matchColours = matchColours }
                 if let matchWallpaper { options.matchWallpaper = matchWallpaper }
-                if let paletteID { options.paletteID = paletteID == "auto" ? nil : paletteID }
+                if let paletteID { options.paletteID = paletteID == "auto" ? nil : paletteID; options.colourPair = nil }
+                if let colourPair { options.colourPair = colourPair; options.paletteID = nil; options.matchColours = true }
+                if let colourStrength { options.colourStrength = colourStrength }
                 if kind != nil { options.matchWallpaper = false }
                 next.desktop.scenes = options
             }
@@ -522,6 +677,7 @@ final class CorkController {
             "icons_hidden": .bool(environment.iconsCovered), "loading_wallpaper": .bool(environment.loading),
             "widgets_hidden": .bool(environment.widgetsCovered), "detected_widgets": .number(Double(environment.detectedWidgets)),
             "widget_cover_windows": .number(Double(environment.widgetCoverCount)),
+            "menu_bar_wallpaper_synced": .bool(environment.menuBarSynchronized),
             "video_playing": .bool(environment.isVideoPlaying), "video_time": .number(environment.videoTime), "video_loops": .number(Double(environment.videoLoops)),
             "wallpaper_error": environment.problem.map(JSONValue.string) ?? .null
         ])
@@ -541,6 +697,16 @@ final class CorkController {
             } else { revision = nil }
             switch name {
             case "cork_get_board": break
+            case "cork_get_favourites": return try .toolResult(JSONValue.encode(favourites))
+            case "cork_save_favourite": return try .toolResult(JSONValue.encode(try await saveFavourite(name: args.requiredString("name"), expectedRevision: revision)))
+            case "cork_load_favourite", "cork_remove_favourite":
+                guard let id = UUID(uuidString: try args.requiredString("id")) else { throw CorkError("Choose a valid favourite-board ID.") }
+                if name == "cork_load_favourite" { try await loadFavourite(id, expectedRevision: revision) }
+                else { try await removeFavourite(id) }
+            case "cork_set_schedule":
+                guard let value = args["schedule"] else { throw CorkError("Provide a randomization schedule.") }
+                let schedule = try JSONDecoder().decode(RandomizationSchedule.self, from: value.data())
+                try await setSchedule(schedule, expectedRevision: revision)
             case "cork_get_widgets": return try .toolResult(JSONValue.encode(widgets))
             case "cork_register_widgets": try await registerWidgets(at: args.requiredString("path"))
             case "cork_add_widget":
@@ -572,7 +738,11 @@ final class CorkController {
                 }
                 try await setDesktopControls(next, expectedRevision: revision)
                 // The randomize binding has its own saved key and enable switch.
-            case "cork_get_collection": return try .toolResult(collectionDescription(includeMetadata: args["include_metadata"]?.bool ?? false))
+            case "cork_get_collection":
+                let offset = args["offset"]?.number ?? 0, limit = args["limit"]?.number ?? 500
+                guard (0...Double(PhotoCollection.maximumPhotos)).contains(offset), (1...500).contains(limit) else { throw CorkError("Use a valid collection offset and a limit from 1–500.") }
+                return try .toolResult(collectionDescription(includeMetadata: args["include_metadata"]?.bool ?? false,
+                    offset: Int(offset), limit: Int(limit), ids: args["ids"]?.array?.compactMap(\.string), sourceURLs: args["source_urls"]?.array?.compactMap(\.string)))
             case "cork_import_collection": try await importCollection(at: args.requiredString("path"))
             case "cork_get_wallpapers": return try .toolResult(wallpaperDescription())
             case "cork_import_wallpapers": try await importWallpapers(at: args.requiredString("path"))
@@ -595,11 +765,12 @@ final class CorkController {
                     guard self.board.items.count < 500 else { throw CorkError("This board already has 500 prints.") }
                     let asset = try await self.repository.importImage(at: path)
                     let size = style.printSize(imageWidth: asset.width, imageHeight: asset.height, width: width)
-                    let item = PrintItem(assetFile: asset.file, title: args["title"]?.string ?? asset.title, style: style,
+                    var item = PrintItem(assetFile: asset.file, title: args["title"]?.string ?? asset.title, style: style,
                         x: try args.optionalNumber("x", fallback: display.safeX + 40), y: try args.optionalNumber("y", fallback: display.safeY + 40),
                         width: size.0, height: size.1, rotation: try args.optionalNumber("rotation", fallback: 0), displayID: display.id,
                         zIndex: (self.board.items.map(\.zIndex).max() ?? -1) + 1, sourceURL: args["source_url"]?.string,
                         imageWidth: asset.width, imageHeight: asset.height)
+                    item.colourProfile = asset.colourProfile
                     try item.validate(); var next = self.board; next.items.append(item); return next
                 }
             case "cork_update_items":
@@ -643,7 +814,11 @@ final class CorkController {
                 try await setDesktop(hideFiles: args["hide_files"]?.bool, kind: kind, path: args["path"]?.string,
                                      paused: args["paused"]?.bool, defaultStyle: style, rotationTheme: args["rotation_theme"]?.string, expectedRevision: revision,
                                      hideWidgets: args["hide_widgets"]?.bool, matchColours: args["match_colours"]?.bool,
-                                     matchWallpaper: args["match_wallpaper"]?.bool, paletteID: args["palette"]?.string)
+                                     matchWallpaper: args["match_wallpaper"]?.bool, paletteID: args["palette"]?.string,
+                                     colourPair: try args["colour_pair"].map { value in
+                                         guard let names = value.array, names.count == 2 else { throw CorkError("Choose two colour families.") }
+                                         return try names.map { name in guard let raw = name.string, let family = ColourFamily(rawValue: raw) else { throw CorkError("Unknown colour family.") }; return family }
+                                     }, colourStrength: args["colour_strength"]?.string.flatMap(ColourSelectionStrength.init(rawValue:)))
             case "cork_set_login_item":
                 guard let enabled = args["enabled"]?.bool else { throw CorkError("enabled must be true or false.") }
                 try registerLogin(enabled)

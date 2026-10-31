@@ -27,7 +27,7 @@ public enum DisplayAdaptation {
                 let moving = images.filter { !$0.isKept }.map(\.id)
                 if !moving.isEmpty { next = try GreedyPacking.arrange(next, ids: moving, display: display, gap: 16, preserveAngles: true) }
             }
-            if !collection.eligibleThemes.isEmpty {
+            if !collection.eligibleThemes.isEmpty || (next.desktop.sceneOptions.colourPair != nil && next.desktop.sceneOptions.matchColours) {
                 // Density depends on logical space, not notification count. Repeated
                 // shrink/grow cycles therefore cannot keep accumulating tiny photos.
                 let desired = min(60, max(8, Int((display.safeWidth * display.safeHeight / 78_000).rounded())))

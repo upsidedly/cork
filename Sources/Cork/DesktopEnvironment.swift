@@ -106,12 +106,17 @@ final class DesktopEnvironment {
     @ObservationIgnored private var mediaKey = ""
     @ObservationIgnored private var settings = DesktopSettings()
     @ObservationIgnored private let wallpapers: URL
+    @ObservationIgnored private let systemWallpaper: SystemWallpaperSync
     @ObservationIgnored private var displayAwake = true
     @ObservationIgnored private var sessionActive = true
     @ObservationIgnored private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @ObservationIgnored var onChange: (() -> Void)?
 
-    init(wallpapers: URL) { self.wallpapers = wallpapers }
+    init(wallpapers: URL) {
+        self.wallpapers = wallpapers
+        systemWallpaper = SystemWallpaperSync(journalURL: wallpapers.deletingLastPathComponent().appendingPathComponent("system-wallpaper.json"))
+    }
+    var menuBarSynchronized: Bool { settings.wallpaper.kind != .system && systemWallpaper.synchronized }
     var windowNumbers: Set<Int> { Set(panels.values.map(\.windowNumber) + widgetMasks.map(\.windowNumber)) }
     var widgetCoverCount: Int { widgetMasks.count }
     var isVideoPlaying: Bool { panels.values.contains { ($0.contentView as? WallpaperView)?.isPlaying == true } }
@@ -122,8 +127,14 @@ final class DesktopEnvironment {
     }
 
     func apply(_ settings: DesktopSettings) {
+        let switchingToSystem = settings.wallpaper.kind == .system && self.settings.wallpaper.kind != .system
         self.settings = settings
         let screens = NSScreen.screens
+        if settings.wallpaper.kind == .system {
+            if switchingToSystem { mediaKey = ""; loadTask?.cancel(); loadTask = nil }
+            do { try systemWallpaper.restore() }
+            catch { problem = error.localizedDescription; loading = false; onChange?(); return }
+        }
         if settings.wallpaper.kind == .system && !settings.hideDesktopFiles && !settings.widgetsHidden {
             stopPanels(); mediaKey = ""; loadTask?.cancel(); loading = false; problem = nil; iconsCovered = false; widgetsCovered = false; return
         }
@@ -137,6 +148,10 @@ final class DesktopEnvironment {
         }
         let key = settings.wallpaper.kind.rawValue + ":" + sources.map { "\($0.0)=\($0.1.path)" }.joined(separator: "|")
         if key == mediaKey && !panels.isEmpty {
+            if settings.wallpaper.kind != .system, let url = sources.first?.1 {
+                do { try systemWallpaper.apply(url, displays: sources.map(\.0)) }
+                catch { problem = error.localizedDescription }
+            }
             syncPanels(); return
         }
         mediaKey = key; loadTask?.cancel(); loading = true; problem = nil
@@ -147,6 +162,9 @@ final class DesktopEnvironment {
                 var prepared: [(UInt32, CGImage)] = []
                 for (id, url) in sources { prepared.append((id, try await loader.image(at: url))); try Task.checkCancellation() }
                 guard mediaKey == key else { return }
+                if settings.wallpaper.kind != .system, let url = sources.first?.1 {
+                    try systemWallpaper.apply(url, displays: sources.map(\.0))
+                }
                 stopPanels()
                 for (id, image) in prepared {
                     guard let screen = DesktopWindows.screen(for: id) else { continue }
@@ -200,7 +218,11 @@ final class DesktopEnvironment {
         iconsCovered = hide && !panels.isEmpty
         widgetsCovered = settings.widgetsHidden && !panels.isEmpty
     }
-    func refreshWidgets() { if settings.widgetsHidden { syncPanels(); onChange?() } }
+    func refreshWidgets() {
+        if settings.wallpaper.kind != .system { apply(settings) }
+        else if settings.widgetsHidden { syncPanels() }
+        onChange?()
+    }
     func setDisplayAwake(_ awake: Bool) { displayAwake = awake; syncPanels() }
     func setSessionActive(_ active: Bool) { sessionActive = active; syncPanels() }
     func updateMotionPreference() { reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion; syncPanels() }
@@ -212,5 +234,10 @@ final class DesktopEnvironment {
     private func stopWidgetMasks() {
         for panel in widgetMasks { (panel.contentView as? WidgetWallpaperView)?.stop(); panel.close() }; widgetMasks.removeAll()
     }
-    func stop() { mediaKey = ""; loadTask?.cancel(); loadTask = nil; stopPanels(); iconsCovered = false; widgetsCovered = false }
+    func stop() {
+        mediaKey = ""; loadTask?.cancel(); loadTask = nil
+        do { try systemWallpaper.restore() }
+        catch { problem = error.localizedDescription }
+        stopPanels(); iconsCovered = false; widgetsCovered = false
+    }
 }

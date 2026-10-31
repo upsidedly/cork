@@ -11,11 +11,13 @@ public struct CollectionWallpaper: Codable, Equatable, Identifiable, Sendable {
     public var width: Double
     public var height: Double
     public var automatic: Bool?
+    public var colourProfile: ImageColourProfile?
     public init(id: String, assetFile: String, title: String, sourceURL: String, sourceBoard: String,
-                palette: [String], themeIDs: [String], width: Double, height: Double, automatic: Bool? = nil) {
+                palette: [String], themeIDs: [String], width: Double, height: Double, automatic: Bool? = nil, colourProfile: ImageColourProfile? = nil) {
         self.id = id; self.assetFile = assetFile; self.title = title; self.sourceURL = sourceURL; self.sourceBoard = sourceBoard
         self.palette = palette; self.themeIDs = themeIDs; self.width = width; self.height = height
         self.automatic = automatic
+        self.colourProfile = colourProfile
     }
     public func supports(_ display: DisplayInfo) -> Bool {
         guard display.scale.isFinite, display.scale > 0, display.width > 0, display.height > 0 else { return false }
@@ -45,15 +47,43 @@ public struct WallpaperCollection: Codable, Equatable, Sendable {
                   wallpaper.width.isFinite, wallpaper.height.isFinite, wallpaper.width > 0, wallpaper.height > 0,
                   wallpaper.width * wallpaper.height <= 100_000_000 else { throw CorkError("Invalid wallpaper metadata.") }
             try wallpaper.settings.validate()
+            try wallpaper.colourProfile?.validate()
         }
     }
-    func choose(scheme: ColourScheme, mood: String, display: DisplayInfo, previous: String?, imagePalettes: [[String]] = [], random: inout WallRotation.Generator) -> CollectionWallpaper? {
+    func choose(scheme: ColourScheme, mood: String, display: DisplayInfo, previous: String?, imagePalettes: [[String]] = [],
+                imageProfiles: [ImageColourProfile] = [], random: inout WallRotation.Generator) -> CollectionWallpaper? {
+        if let pair = scheme.colourFamilies {
+            let ranked = wallpapers.compactMap { item -> (CollectionWallpaper, Double)? in
+                guard item.automatic != false, item.supports(display), let profile = item.colourProfile,
+                      let dominant = profile.dominantFamily else { return nil }
+                var affinity = 0.45
+                if pair.contains(dominant) {
+                    guard profile.matches(pair, strength: .strong), imageProfiles.isEmpty ||
+                        imageProfiles.filter({ $0.coverage(dominant) >= 0.04 }).count >= max(1, Int(ceil(Double(imageProfiles.count) * 0.20))) else { return nil }
+                    affinity = 1 + profile.coverage(dominant) * 0.12
+                } else {
+                    guard dominant.isNeutral else { return nil }
+                    let represented = pair.filter { family in
+                        !family.isNeutral && profile.coverage(family) >= 0.10 && (imageProfiles.isEmpty ||
+                            imageProfiles.filter { $0.coverage(family) >= 0.04 }.count >= max(1, Int(ceil(Double(imageProfiles.count) * 0.20))))
+                    }
+                    if !represented.isEmpty && profile.matches(pair, strength: .strongAndAccents) {
+                        affinity = 0.88 + represented.reduce(0) { $0 + profile.coverage($1) } * 0.1
+                    } else {
+                        guard profile.colours.filter({ !$0.family.isNeutral }).reduce(0, { $0 + $1.coverage }) <= 0.10 else { return nil }
+                    }
+                }
+                return (item, affinity + (item.id != previous ? 0.02 : 0))
+            }.sorted { $0.1 > $1.1 }
+            guard let first = ranked.first else { return nil }
+            return ranked.prefix(3).filter { $0.1 >= first.1 - 0.025 }.randomElement(using: &random)?.0
+        }
         let ranked = wallpapers.filter {
             $0.automatic != false && $0.supports(display) && ColourMatch.backgroundScore($0.palette, against: scheme.colours) >= 0.55
-                && ColourMatch.wallpaperHueAffinity($0.palette, imagePalettes: imagePalettes) > 0
+                && ColourMatch.wallpaperHueAffinity($0.palette, imagePalettes: imagePalettes, majorColours: scheme.majorColours) > 0
         }.map { item in
             (item, ColourMatch.backgroundScore(item.palette, against: scheme.colours)
-                + ColourMatch.wallpaperHueAffinity(item.palette, imagePalettes: imagePalettes) * 0.16
+                + ColourMatch.wallpaperHueAffinity(item.palette, imagePalettes: imagePalettes, majorColours: scheme.majorColours) * 0.16
                 + (item.themeIDs.contains(mood) ? 0.04 : 0) + (item.id != previous ? 0.02 : 0))
         }.sorted { $0.1 > $1.1 }
         guard let first = ranked.first else { return nil }

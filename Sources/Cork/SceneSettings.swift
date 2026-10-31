@@ -8,11 +8,18 @@ struct SceneSettings: View {
             Toggle("Match image colours", isOn: Binding(get: { model.board.desktop.sceneOptions.matchColours }, set: { enabled in
                 model.run { try await model.setDesktop(matchColours: enabled) }
             }))
-            Picker("Colour palette", selection: Binding(get: { model.board.desktop.sceneOptions.paletteID ?? "auto" }, set: { palette in
-                model.run { try await model.setDesktop(paletteID: palette) }
+            Picker("Colour palette", selection: Binding(get: { model.board.desktop.sceneOptions.colourPair != nil ? "custom" : model.board.desktop.sceneOptions.paletteID ?? "auto" }, set: { palette in
+                model.run {
+                    if palette == "custom" { try await model.setDesktop(colourPair: [.blue, .yellow]) }
+                    else { try await model.setDesktop(paletteID: palette) }
+                }
             })) {
                 Text("From mood or kept images").tag("auto")
+                Text("Choose two colours").tag("custom")
                 ForEach(ScenePalettes.all) { palette in Text(palette.name).tag(palette.id) }
+            }
+            if model.board.desktop.sceneOptions.colourPair != nil {
+                CustomColourSettings(model: model).disabled(model.busy || !model.board.desktop.sceneOptions.matchColours)
             }
             if let scheme = model.board.rotation?.scheme {
                 HStack(spacing: 6) {

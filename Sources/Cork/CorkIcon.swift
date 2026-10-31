@@ -1,6 +1,18 @@
 import AppKit
 
 enum CorkIcon {
+    static func drawImporter(in rect: CGRect, color: NSColor) {
+        NSGraphicsContext.saveGraphicsState(); defer { NSGraphicsContext.restoreGraphicsState() }
+        let transform = NSAffineTransform(); transform.translateX(by: rect.minX, yBy: rect.minY)
+        transform.scaleX(by: rect.width / 100, yBy: rect.height / 100); transform.concat()
+        color.setStroke()
+        let path = NSBezierPath(); path.lineWidth = 6.3; path.lineCapStyle = .round; path.lineJoinStyle = .round
+        path.move(to: CGPoint(x: 21, y: 62)); path.line(to: CGPoint(x: 21, y: 15)); path.line(to: CGPoint(x: 79, y: 15)); path.line(to: CGPoint(x: 79, y: 62))
+        path.move(to: CGPoint(x: 50, y: 87)); path.line(to: CGPoint(x: 50, y: 44))
+        path.move(to: CGPoint(x: 35, y: 58)); path.line(to: CGPoint(x: 50, y: 43)); path.line(to: CGPoint(x: 65, y: 58)); path.stroke()
+        let line = NSBezierPath(); line.lineWidth = 5; line.lineCapStyle = .round
+        line.move(to: CGPoint(x: 36, y: 30)); line.line(to: CGPoint(x: 64, y: 30)); line.stroke()
+    }
     /// A pinned print, with the same ink, stroke and inset family as Tuck and Snap.
     static func drawMark(in rect: CGRect, color: NSColor) {
         NSGraphicsContext.saveGraphicsState(); defer { NSGraphicsContext.restoreGraphicsState() }

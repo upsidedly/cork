@@ -5,7 +5,7 @@ import CorkCore
 enum CorkMCP {
     static func main() {
         if CommandLine.arguments.contains("--help") {
-            FileHandle.standardError.write(Data("Cork MCP 0.6.0 — newline-delimited JSON-RPC over stdio. CORK_DATA_DIR and CORK_SOCKET override the local board/socket.\n".utf8))
+            FileHandle.standardError.write(Data("Cork MCP 0.9.0 — newline-delimited JSON-RPC over stdio. CORK_DATA_DIR and CORK_SOCKET override the local board/socket.\n".utf8))
             return
         }
         var dispatcher = MCPDispatcher()

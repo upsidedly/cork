@@ -4,23 +4,51 @@ public struct ColourScheme: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var name: String
     public var colours: [String]
-    public init(id: String, name: String, colours: [String]) { self.id = id; self.name = name; self.colours = colours }
+    /// Two deliberate colour families, rather than a main hue with neutral accents.
+    public var majorColours: [String]?
+    public var colourFamilies: [ColourFamily]?
+    public init(id: String, name: String, colours: [String], majorColours: [String]? = nil) {
+        self.id = id; self.name = name; self.colours = colours; self.majorColours = majorColours
+    }
     public func validate() throws {
         guard !id.isEmpty, id.count <= 80, name.count <= 120, (1...8).contains(colours.count),
               colours.allSatisfy(ColourMatch.isHex), Set(colours.map { $0.uppercased() }).count == colours.count else { throw CorkError("Invalid scene palette.") }
+        if let majorColours {
+            guard majorColours.count == 2, Set(majorColours.map { $0.uppercased() }).count == 2,
+                  majorColours.allSatisfy({ colour in colours.contains { $0.uppercased() == colour.uppercased() } }),
+                  colourFamilies != nil || ColourMatch.distinctHues(majorColours) else { throw CorkError("A paired palette needs two distinct chromatic colours from its swatches.") }
+        }
+        if let colourFamilies {
+            guard colourFamilies.count == 2, Set(colourFamilies).count == 2, majorColours == colourFamilies.map(\.hex) else { throw CorkError("Choose two different colour families.") }
+        }
     }
 }
 public struct SceneOptions: Codable, Equatable, Sendable {
     public var matchColours = true
     public var matchWallpaper = true
     public var paletteID: String?
+    public var colourPair: [ColourFamily]?
+    public var colourStrength: ColourSelectionStrength?
+    public var selectedStrength: ColourSelectionStrength { colourStrength ?? .strong }
     public init() {}
     public func validate() throws {
         if let paletteID, !ScenePalettes.all.contains(where: { $0.id == paletteID }) { throw CorkError("Unknown colour palette.") }
+        if let colourPair {
+            guard paletteID == nil else { throw CorkError("Choose a preset palette or two colours.") }
+            try ScenePalettes.pair(colourPair).validate()
+        }
     }
 }
 
 public enum ScenePalettes {
+    public static func pair(_ families: [ColourFamily]) throws -> ColourScheme {
+        guard families.count == 2, Set(families).count == 2 else { throw CorkError("Choose two different colours.") }
+        var swatches = families.map(\.hex)
+        for neutral in ["#202326", "#EEE9DD", "#8C9296"] where !swatches.contains(neutral) { swatches.append(neutral) }
+        var result = ColourScheme(id: "pair-" + families.map(\.rawValue).joined(separator: "-"),
+            name: families.map(\.name).joined(separator: " + "), colours: swatches, majorColours: families.map(\.hex))
+        result.colourFamilies = families; return result
+    }
     public static let all: [ColourScheme] = [
         .init(id: "open-air", name: "Moss & paper", colours: ["#2A3A2B", "#65705A", "#B7B9A3", "#E9E1CF", "#846044"]),
         .init(id: "summit-days", name: "Silver & blue", colours: ["#273747", "#647887", "#A4B1B5", "#E4E2DB", "#947E6E"]),
@@ -35,13 +63,22 @@ public enum ScenePalettes {
         .init(id: "oxblood", name: "Oxblood & parchment", colours: ["#2B141C", "#6B283B", "#AA6864", "#E4D3B7", "#6E7974"]),
         .init(id: "rose-smoke", name: "Rose & smoke", colours: ["#3C2E3F", "#876D86", "#C39AA2", "#E4D4CB", "#6B8587"]),
         .init(id: "lavender-dusk", name: "Lavender dusk", colours: ["#25283F", "#615B88", "#A28BA4", "#D6C7D4", "#8A9995"]),
-        .init(id: "sea-glass", name: "Sea glass & brass", colours: ["#173B3E", "#397E7A", "#85AAA0", "#D9DED1", "#A78B53"])
+        .init(id: "sea-glass", name: "Sea glass & brass", colours: ["#173B3E", "#397E7A", "#85AAA0", "#D9DED1", "#A78B53"]),
+        .init(id: "blue-butter", name: "Blue & butter", colours: ["#2C6196", "#D7B54A", "#172B45", "#F1E6C7", "#A9C2D1"], majorColours: ["#2C6196", "#D7B54A"]),
+        .init(id: "teal-rust", name: "Teal & rust", colours: ["#397B7A", "#AD6042", "#1B3535", "#E9D9C5", "#9FBBB0"], majorColours: ["#397B7A", "#AD6042"]),
+        .init(id: "forest-rose", name: "Forest & rose", colours: ["#45634B", "#BF8796", "#243A2C", "#EEE1D5", "#9FA995"], majorColours: ["#45634B", "#BF8796"]),
+        .init(id: "cobalt-vermilion", name: "Cobalt & vermilion", colours: ["#3456A0", "#BB443A", "#202838", "#E9DECB", "#91A5BF"], majorColours: ["#3456A0", "#BB443A"]),
+        .init(id: "plum-ochre", name: "Plum & ochre", colours: ["#735177", "#C19A43", "#302334", "#E8DDC4", "#B19BAF"], majorColours: ["#735177", "#C19A43"]),
+        .init(id: "sage-lilac", name: "Sage & lilac", colours: ["#7D9772", "#9B81AF", "#354239", "#E9E4D7", "#C5C9B3"], majorColours: ["#7D9772", "#9B81AF"]),
+        .init(id: "olive-coral", name: "Olive & coral", colours: ["#757C3F", "#C77769", "#343A25", "#EEE1C5", "#AEB389"], majorColours: ["#757C3F", "#C77769"]),
+        .init(id: "espresso-ice", name: "Espresso & ice", colours: ["#78503A", "#76B2CA", "#30251F", "#E7DFD1", "#A8CAD5"], majorColours: ["#78503A", "#76B2CA"])
     ]
     public static func choose(mood: String, preferred: String?, anchors: [[String]], variation: UInt64 = 0) -> ColourScheme {
         if let preferred, let exact = all.first(where: { $0.id == preferred }) { return exact }
+        if let paired = all.first(where: { $0.id == mood && $0.majorColours != nil }) { return paired }
         let samples = anchors.filter { !$0.isEmpty }
         if !samples.isEmpty {
-            return all.max { a, b in
+            return all.filter { $0.majorColours == nil }.max { a, b in
                 samples.reduce(0) { $0 + ColourMatch.score($1, against: a.colours) } < samples.reduce(0) { $0 + ColourMatch.score($1, against: b.colours) }
             } ?? all[0]
         }
@@ -69,8 +106,11 @@ public enum ColourMatch {
     public static func isHex(_ value: String) -> Bool { value.count == 7 && value.first == "#" && value.dropFirst().allSatisfy(\.isHexDigit) }
     static func lab(_ hex: String) -> Lab? {
         guard isHex(hex), let rgb = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-        func linear(_ n: UInt32) -> Double { let s = Double(n) / 255; return s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4) }
-        let r = linear((rgb >> 16) & 255), g = linear((rgb >> 8) & 255), b = linear(rgb & 255)
+        return lab(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
+    }
+    static func lab(red: Double, green: Double, blue: Double) -> Lab {
+        func linear(_ s: Double) -> Double { s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4) }
+        let r = linear(red), g = linear(green), b = linear(blue)
         let l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
         let m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
         let s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
@@ -105,17 +145,49 @@ public enum ColourMatch {
         let presence = sum / Double(expressive.count)
         return forward * 0.65 + presence * 0.35
     }
-    private static func dominantColour(_ colours: [String]) -> Lab? {
+    private static func dominantColour(_ colours: [String], minimumChroma: Double = 0.025) -> Lab? {
         // Imported swatches are ordered by pixel prevalence. A small accent later
         // in the palette must not excuse a background with a different main hue.
-        colours.prefix(3).compactMap(lab).first { $0.l > 0.10 && hypot($0.a, $0.b) >= 0.025 }
+        colours.prefix(3).compactMap(lab).first { $0.l > 0.10 && hypot($0.a, $0.b) >= minimumChroma }
+    }
+    private static func hueAngle(_ a: Lab, _ b: Lab) -> Double {
+        let denominator = hypot(a.a, a.b) * hypot(b.a, b.b)
+        guard denominator > 0 else { return .pi }
+        return acos(min(1, max(-1, (a.a * b.a + a.b * b.b) / denominator)))
+    }
+    static func distinctHues(_ colours: [String]) -> Bool {
+        let values = colours.compactMap(lab)
+        return values.count == 2 && values.allSatisfy { hypot($0.a, $0.b) >= 0.025 }
+            && hueAngle(values[0], values[1]) >= .pi / 4
+    }
+    /// Only prevalent chromatic swatches assign a family; tiny accents and greys cannot claim a half of the pair.
+    public static func majorColourIndex(_ colours: [String], scheme: ColourScheme) -> Int? {
+        guard let majors = scheme.majorColours, majors.count == 2, let sample = dominantColour(colours, minimumChroma: 0.04) else { return nil }
+        let targets = majors.compactMap(lab)
+        guard targets.count == 2, let index = targets.indices.min(by: { hueAngle(sample, targets[$0]) < hueAngle(sample, targets[$1]) }),
+              hueAngle(sample, targets[index]) <= .pi / 7 else { return nil }
+        return index
     }
     /// Validate the backdrop against the photos actually selected, not just a
     /// broad preset whose neutral/accent swatches can hide a blue/purple mismatch.
-    public static func wallpaperHueAffinity(_ colours: [String], imagePalettes: [[String]]) -> Double {
+    public static func wallpaperHueAffinity(_ colours: [String], imagePalettes: [[String]], majorColours: [String]? = nil) -> Double {
         guard !imagePalettes.isEmpty else { return 1 }
         let background = dominantColour(colours)
-        let photos = imagePalettes.compactMap(dominantColour)
+        let photos = imagePalettes.compactMap { dominantColour($0, minimumChroma: majorColours == nil ? 0.025 : 0.04) }
+        if let majors = majorColours, majors.count == 2 {
+            guard let background else { return 0.6 }
+            let families = majors.compactMap(lab)
+            guard families.count == 2, let family = families.min(by: { hueAngle(background, $0) < hueAngle(background, $1) }),
+                  hueAngle(background, family) <= .pi / 5 else { return 0 }
+            let represented = photos.filter { hueAngle($0, family) <= .pi / 5 }
+            guard represented.count >= max(1, Int(ceil(Double(imagePalettes.count) * 0.20))) else { return 0 }
+            let direction = represented.reduce(Lab(l: 0, a: 0, b: 0)) { sum, value in
+                let chroma = hypot(value.a, value.b)
+                return Lab(l: 0, a: sum.a + value.a / chroma, b: sum.b + value.b / chroma)
+            }
+            let angle = hueAngle(background, direction)
+            return angle <= .pi / 8 ? 1 - angle * 0.2 : 0
+        }
         let minimum = max(1, Int(ceil(Double(imagePalettes.count) * 0.35)))
         if photos.count < minimum {
             return background.map { hypot($0.a, $0.b) < 0.04 ? 0.6 : 0 } ?? 0.6

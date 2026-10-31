@@ -33,6 +33,22 @@ public enum CorkTools {
         ], required: ["id"])
         let entries: [(String, String, JSONValue, Bool, Bool)] = [
             ("cork_get_board", "Inspect all prints, stable IDs, display sizes/safe areas, revision, edit state and screenshot permission. Coordinates use a display-local upper-left origin in points.", schema([:]), true, false),
+            ("cork_get_favourites", "List locally saved favourite corkboards, including their original layouts and wallpaper references.", schema([:]), true, false),
+            ("cork_save_favourite", "Save the current corkboard and wallpaper as a named favourite. Reuses existing media; no image copies.", schema([
+                "name": property("string", "Favourite name, 1–120 characters."), "expected_revision": property("integer", "Optional current board revision.")
+            ], required: ["name"]), false, false),
+            ("cork_load_favourite", "Restore a saved favourite and fit it to current displays. Keeps global shortcuts, schedule and desktop visibility preferences. Undoable.", schema([
+                "id": property("string", "Favourite UUID from cork_get_favourites."), "expected_revision": property("integer", "Optional current board revision.")
+            ], required: ["id"]), false, false),
+            ("cork_remove_favourite", "Remove a favourite bookmark. Keeps the current wall and all image media.", schema(["id": property("string", "Favourite UUID.")], required: ["id"]), false, true),
+            ("cork_set_schedule", "Save an explicitly requested periodic randomization schedule. Off by default. Uses current mood/colours; sleep catches up once. Times use the local calendar; nextRun is computed by Cork.", schema([
+                "schedule": schema(["frequency": choice(RandomizationFrequency.allCases.map(\.rawValue), "off, minute, hour, day, week, morning_evening, custom"),
+                    "every": property("integer", "Custom interval count, 1 through one year's worth."), "unit": choice(ScheduleUnit.allCases.map(\.rawValue), "Custom interval unit."),
+                    "hour": property("integer", "Local hour, 0–23."), "minute": property("integer", "Minute, 0–59."), "weekday": property("integer", "Weekly day: Sunday=1, Monday=2, … Saturday=7."),
+                    "eveningHour": property("integer", "Second local hour for morning/evening."), "eveningMinute": property("integer", "Second minute.")
+                ], required: ["frequency", "every", "unit", "hour", "minute", "weekday", "eveningHour", "eveningMinute"]),
+                "expected_revision": property("integer", "Optional current board revision.")
+            ], required: ["schedule"]), false, false),
             ("cork_get_widgets", "List registered local widget providers and their widgets.", schema([:]), true, false),
             ("cork_register_widgets", "Register a selected app's local widget manifest and copy its resources. Widget code runs locally with network and outside-file access blocked.", schema(["path": property("string", "Absolute path to the app's widget manifest JSON.")], required: ["path"]), false, false),
             ("cork_add_widget", "Place an interactive registered widget on the desktop and reflow the same photos around it. Undoable; per-instance state saves locally.", schema([
@@ -54,13 +70,17 @@ public enum CorkTools {
                 "randomize_key_label": property("string", "Display name of the randomize key."),
                 "expected_revision": property("integer", "Optional current board revision.")
             ]), false, false),
-            ("cork_get_collection", "Inspect the local rotation collection, curated moods, counts, and metadata path. include_metadata returns every photo's source, tags, palette, and mood assignments.", schema([
-                "include_metadata": property("boolean", "Return full per-photo metadata; defaults to false.")
+            ("cork_get_collection", "Inspect the local rotation collection, curated moods, colour families with strong/accent counts, classification progress and metadata path. include_metadata returns every photo's source, tags, palette, measured colourProfile and mood assignments.", schema([
+                "include_metadata": property("boolean", "Return per-photo metadata; defaults to false. Pages contain at most 500 photos."),
+                "offset": property("integer", "Zero-based page offset; default 0."),
+                "limit": property("integer", "Page size 1–500; default 500."),
+                "ids": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "maxItems": .number(200)]),
+                "source_urls": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "maxItems": .number(200)])
             ]), true, false),
             ("cork_import_collection", "Import a selected local JSON collection manifest and copy its images. Merges by stable photo ID without changing the wall. Manifest schemaVersion 1: themes [{id,name,description}], photos [{id,path,title,description,sourceURL,sourceBoard,tags,palette,themeIDs}]. Use verified Pinterest download paths and original pin URLs. Import in batches of about 20 photos; inspect the collection after an ambiguous response before resuming.", schema([
                 "path": property("string", "Absolute local manifest JSON path, up to 5 MB, 1–200 photos per manifest.")
             ], required: ["path"]), false, false),
-            ("cork_roll_wall", "Greedily fill a wall from the saved local photo collection. Uses one curated visual mood, mixes at least three source boards when available with about a 40% per-board cap, and selects photo aspect ratios for rectangular gaps. Favors fresh photos, mixes print types, and leaves captions blank. Replaces images on one display; preserves notes, widgets and other displays. Atomic, saved, and undoable; no network request.", schema([
+            ("cork_roll_wall", "Greedily fill a wall from the saved local photo collection. Uses one curated visual mood, balances both colour families for paired palettes, mixes at least three source boards when available with about a 40% per-board cap, and selects photo aspect ratios for rectangular gaps. Favors fresh photos, mixes print types, and leaves captions blank. Replaces images on one display; preserves notes, widgets and other displays. Atomic, saved, and undoable; no network request.", schema([
                 "theme": property("string", "Mood ID from cork_get_collection, or auto. Defaults to the saved mood choice."),
                 "palette": property("string", "Optional palette ID from cork_get_wallpapers."),
                 "colour_aware": property("boolean", "Override the saved colour matching preference for this roll."),
@@ -110,6 +130,10 @@ public enum CorkTools {
                 "match_colours": property("boolean", "Choose images that complement the scene palette."),
                 "match_wallpaper": property("boolean", "Choose a native-resolution wallpaper for the palette on future rolls or fills."),
                 "palette": property("string", "Palette ID from cork_get_wallpapers, or auto to use the mood/kept images."),
+                "colour_pair": .object(["type": .string("array"), "minItems": .number(2), "maxItems": .number(2),
+                    "items": choice(ColourFamily.allCases.map(\.rawValue), "Colour family."),
+                    "description": .string("Two different family IDs from cork_get_collection. Searches the whole classified collection on future rolls/fills, enables colour matching and replaces the preset palette. Use palette auto to return to curated moods.")]),
+                "colour_strength": choice(ColourSelectionStrength.allCases.map(\.rawValue), "strong requires 18% image coverage; strong_and_accents includes 4% accents. Saved with the pair."),
                 "wallpaper_kind": choice(["system", "image", "video"], "Original system wallpaper, imported image, or looping video."),
                 "path": property("string", "Absolute local file, required for image/video wallpaper. Images ≤50 MB; videos ≤2 GB."),
                 "paused": property("boolean", "Pause or resume a selected video wallpaper."),
@@ -184,7 +208,7 @@ public struct MCPDispatcher: Sendable {
             return response(.object([
                 "protocolVersion": .string(versions.contains(requested) ? requested : versions[0]),
                 "capabilities": .object(["tools": .object(["listChanged": .bool(false)])]),
-                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.6.0")]),
+                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.9.0")]),
                 "instructions": .string("Use cork_get_board, then add local images (Pinterest downloads come from the Pinterest plugin). Arrange with revision checks, inspect cork_screenshot_desktop, refine geometry, and undo mistakes. Coordinates: upper-left of each full display, points; image responses report pixel-to-point scale. Cork app owns all state.")
             ]))
         }

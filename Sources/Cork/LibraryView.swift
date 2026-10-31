@@ -14,14 +14,18 @@ struct CorkLibraryView: View {
                     Button("Dismiss", systemImage: "xmark") { model.errorMessage = nil }.labelStyle(.iconOnly).buttonStyle(.plain)
                 }.font(.callout).padding(12).background(.quaternary)
             }
+            if model.ready && !model.showsWelcome { SceneComposer(model: model); Divider() }
             if !model.ready {
                 ContentUnavailableView("Board unavailable", systemImage: "rectangle.on.rectangle.slash", description: Text("Cork could not open its saved board. Check the message above; your local files have been preserved."))
+            } else if model.showsWelcome {
+                WelcomeView(model: model)
             } else if model.board.items.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "pin.square").font(.system(size: 42, weight: .ultraLight)).foregroundStyle(.secondary)
                     Text("Add something to your wall").font(.title3.weight(.medium))
                     Text("Images and notes, right on your wallpaper.").foregroundStyle(.secondary)
                     HStack(spacing: 12) {
+                        Button("Import from Pinterest…") { model.run { try await model.launchImporter() } }
                         Button("Add Images…", systemImage: "photo.badge.plus") { model.addImages() }
                         Button("New Note", systemImage: "square.and.pencil") { model.addNote() }
                     }.padding(.top, 4)
@@ -80,11 +84,10 @@ struct CorkLibraryView: View {
         .frame(minWidth: 640, minHeight: 440)
         .toolbar {
             ToolbarItemGroup {
+                Button("Import from Pinterest", systemImage: "square.and.arrow.down") { model.run { try await model.launchImporter() } }
+                    .help("Choose Pinterest boards and review images before adding them")
                 Button("Add Images", systemImage: "photo.badge.plus") { model.addImages() }.help("Add Images (⌘O)")
                 Button("New Note", systemImage: "square.and.pencil") { model.addNote() }.help("New Note (⌘N)")
-                Button("Roll Wall", systemImage: "dice") { model.run { try await model.rollWall() } }
-                    .help(model.collection.photos.isEmpty ? "Import a rotation collection in Settings" : "Roll a new wall (⌘R) · Undo with ⌘Z")
-                    .disabled(!model.canRollWall)
                 Button("Fill Empty", systemImage: "rectangle.badge.plus") { model.run { try await model.rollWall(fillEmpty: true) } }
                     .help("Keep existing prints and fill the gaps with matching images").disabled(!model.canRollWall)
                 Menu {
@@ -241,6 +244,12 @@ struct ItemInspector: View {
                             Text("From \(photo.sourceBoard)").font(.caption).foregroundStyle(.secondary)
                             Text(photo.tags.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                             Text("Palette: \(photo.palette.joined(separator: " "))").font(.caption.monospaced()).foregroundStyle(.secondary)
+                            if let profile = photo.colourProfile {
+                                ForEach(profile.colours.filter { $0.coverage >= 0.04 }.sorted { $0.coverage > $1.coverage }) { entry in
+                                    Text("\(entry.family.name): \(entry.strength == .strong ? "Strong" : "Accent") · \(Int((entry.coverage * 100).rounded()))%")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                             Text(model.collection.themes.filter { photo.themeIDs.contains($0.id) }.map(\.name).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                         }.padding(.top, 6).textSelection(.enabled)
                     }.font(.callout)
@@ -330,9 +339,11 @@ struct CorkSettingsView: View {
                 })) {
                     Text("Surprise me").tag("auto")
                     ForEach(model.collection.eligibleThemes) { theme in Text(theme.name).tag(theme.id) }
-                }
+                }.disabled(model.board.desktop.sceneOptions.colourPair != nil && model.board.desktop.sceneOptions.matchColours)
                 if let name = model.board.rotation?.themeName { Text("On the wall: \(name)").font(.caption).foregroundStyle(.secondary) }
-                Text("One visual mood across boards. Notes stay put. Undo restores the previous wall.").font(.caption).foregroundStyle(.secondary)
+                Text(model.board.desktop.sceneOptions.colourPair != nil && model.board.desktop.sceneOptions.matchColours
+                    ? "Custom colours use the whole collection. Notes stay put. Undo restores the previous wall."
+                    : "One visual mood across boards. Notes stay put. Undo restores the previous wall.").font(.caption).foregroundStyle(.secondary)
             }
             Button("Import Photo Collection…") { model.chooseCollection() }.disabled(model.busy)
             SceneSettings(model: model)

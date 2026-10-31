@@ -2,7 +2,7 @@ import Foundation
 
 extension BoardRepository {
     private func decodeCollection(_ data: Data) throws -> PhotoCollection {
-        guard data.count <= 5_000_000 else { throw CorkError("The rotation collection is too large.") }
+        guard data.count <= 64_000_000 else { throw CorkError("The rotation collection is too large.") }
         let result = try JSONDecoder().decode(PhotoCollection.self, from: data)
         try result.validate(); return result
     }
@@ -50,7 +50,8 @@ extension BoardRepository {
                 if let index = next.photos.firstIndex(where: { $0.id == entry.id }),
                    FileManager.default.fileExists(atPath: assets.appendingPathComponent(next.photos[index].assetFile).path) {
                     let old = next.photos[index]
-                    next.photos[index] = entry.saved(asset: ImportedAsset(file: old.assetFile, width: old.imageWidth, height: old.imageHeight, title: entry.title))
+                    next.photos[index] = entry.saved(asset: ImportedAsset(file: old.assetFile, width: old.imageWidth, height: old.imageHeight, title: entry.title,
+                        colourProfile: try old.colourProfile ?? imageColourProfile(assetFile: old.assetFile)))
                 } else {
                     let asset = try importImage(at: entry.path, maxPixelSize: 2048); created.append(asset.file)
                     let photo = entry.saved(asset: asset)

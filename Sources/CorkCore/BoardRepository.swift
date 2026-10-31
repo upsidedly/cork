@@ -9,6 +9,10 @@ public struct ImportedAsset: Sendable {
     public let width: Double
     public let height: Double
     public let title: String
+    public let colourProfile: ImageColourProfile?
+    public init(file: String, width: Double, height: Double, title: String, colourProfile: ImageColourProfile? = nil) {
+        self.file = file; self.width = width; self.height = height; self.title = title; self.colourProfile = colourProfile
+    }
 }
 
 public actor BoardRepository {
@@ -27,7 +31,10 @@ public actor BoardRepository {
     public func load() throws -> (Board, String?) {
         try prepare()
         let url = root.appendingPathComponent("board.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return (Board(), nil) }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            var fresh = Board(); fresh.desktop.hideDesktopFiles = false
+            return (fresh, nil)
+        }
         do { return (try decode(Data(contentsOf: url)), nil) }
         catch {
             let originalError = error.localizedDescription
@@ -70,13 +77,15 @@ public actor BoardRepository {
                                         kCGImageSourceCreateThumbnailWithTransform: true,
                                         kCGImageSourceThumbnailMaxPixelSize: maxPixelSize]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw CorkError("Could not decode the image.") }
+        let colourProfile = try PaletteAnalysis.profile(image: image)
         try prepare()
         let filename = "\(UUID().uuidString).png"
         let destinationURL = assets.appendingPathComponent(filename)
         guard let destination = CGImageDestinationCreateWithURL(destinationURL as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw CorkError("Could not create an image copy.") }
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw CorkError("Could not save the image copy.") }
-        return ImportedAsset(file: filename, width: Double(image.width), height: Double(image.height), title: url.deletingPathExtension().lastPathComponent)
+        return ImportedAsset(file: filename, width: Double(image.width), height: Double(image.height), title: url.deletingPathExtension().lastPathComponent,
+            colourProfile: colourProfile)
     }
 
     public func importWallpaperImage(at path: String) throws -> WallpaperSettings {

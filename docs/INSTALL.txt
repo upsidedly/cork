@@ -1,0 +1,29 @@
+Cork — a wall for your Mac
+
+Requires macOS 14 or later. Works on Apple silicon and Intel Macs.
+
+1. Quit an older Cork if it is running.
+2. Drag Cork.app to Applications, then open it there.
+3. Use Import from Pinterest to choose boards and review your images.
+   Cork Importer is included inside Cork; no plugin or separate installation is needed.
+
+This community build is ad-hoc signed, not Developer ID signed or notarized.
+macOS may block the first launch. If you trust this release and its source,
+use Apple's Privacy & Security > Open Anyway flow. Do not disable Gatekeeper.
+https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac
+
+Pinterest connection is optional. Before connecting, the importer explains
+its scoped browser-cookie access and asks for consent. macOS may ask for
+the selected browser's Safe Storage key. You can cancel that request.
+The session is kept in memory and is sent only to Pinterest.
+
+Accessibility is optional for minimizing other apps. Screen Recording is
+optional for explicitly requested desktop screenshots. Neither is needed
+for importing, arranging or randomizing your images.
+
+Your wall and images live in ~/Library/Application Support/Cork.
+An unfinished import review lives in ~/Library/Application Support/Cork Importer.
+Updating the app preserves both. Personal media is not bundled in this release.
+
+Source and issues: https://github.com/upsidedly/cork
+License: GNU AGPL version 3 or later. Media rights remain with their owners.

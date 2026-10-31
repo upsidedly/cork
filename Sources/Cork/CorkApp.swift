@@ -37,6 +37,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         model.onChange = { [weak self] in self?.updateMenu() }
         model.showLibrary = { [weak self] in self?.openLibrary() }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(scheduleTimeChanged), name: .NSSystemTimeZoneDidChange, object: nil)
         let workspace = NSWorkspace.shared.notificationCenter
         for (name, selector) in [
             (NSWorkspace.screensDidSleepNotification, #selector(screensSleep)),
@@ -75,12 +76,13 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     func applicationDidBecomeActive(_ notification: Notification) { model.screenAccess = CGPreflightScreenCaptureAccess(); model.refreshLoginState(); model.controls.refreshAccess() }
     @objc private func displaysChanged() { model.displaysChanged() }
     @objc private func screensSleep() { model.environment.setDisplayAwake(false); model.controls.setDisplayAwake(false); model.desktop.pauseWidgets(true) }
-    @objc private func screensWake() { model.environment.setDisplayAwake(true); model.controls.setDisplayAwake(true); model.desktop.pauseWidgets(false) }
+    @objc private func screensWake() { model.environment.setDisplayAwake(true); model.controls.setDisplayAwake(true); model.desktop.pauseWidgets(false); model.scheduleDriver.wake() }
     @objc private func sessionInactive() { model.environment.setSessionActive(false); model.controls.setSessionActive(false); model.desktop.pauseWidgets(true) }
     @objc private func sessionActive() { model.environment.setSessionActive(true); model.controls.setSessionActive(true); model.desktop.pauseWidgets(false) }
     @objc private func activationChanged() { model.controls.refreshAccess(); model.environment.refreshWidgets() }
     @objc private func widgetsChanged() { model.environment.refreshWidgets() }
     @objc private func motionChanged() { model.environment.updateMotionPreference() }
+    @objc private func scheduleTimeChanged() { model.scheduleTimeChanged() }
 
     func openLibrary() {
         if library == nil {
@@ -104,6 +106,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         menu.addItem(menuItem("Minimize All Windows", #selector(minimizeAllWindows)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Add Images…", #selector(addImages), key: "o"))
+        menu.addItem(menuItem("Import from Pinterest…", #selector(importPinterest)))
         menu.addItem(menuItem("New Note", #selector(addNote), key: "n"))
         let roll = menuItem("Roll Wall", #selector(rollWall), key: "r"); roll.isEnabled = model.canRollWall; menu.addItem(roll)
         let fill = menuItem("Fill Empty", #selector(fillEmpty)); fill.isEnabled = model.canRollWall; menu.addItem(fill)
@@ -142,6 +145,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let app = NSMenuItem(); app.submenu = appMenu; main.addItem(app)
         let fileMenu = NSMenu(); fileMenu.addItem(menuItem("Open Cork…", #selector(showLibrary), key: "l"))
         fileMenu.addItem(menuItem("Add Images…", #selector(addImages), key: "o"))
+        fileMenu.addItem(menuItem("Import from Pinterest…", #selector(importPinterest)))
         fileMenu.addItem(menuItem("New Note", #selector(addNote), key: "n"))
         fileMenu.addItem(menuItem("Roll Wall", #selector(rollWall), key: "r"))
         fileMenu.addItem(menuItem("Fill Empty", #selector(fillEmpty)))
@@ -156,11 +160,15 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             editMenu.addItem(item)
         }
         let edit = NSMenuItem(title: "Edit", action: nil, keyEquivalent: ""); edit.submenu = editMenu; main.addItem(edit)
+        let helpMenu = NSMenu(), help = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        helpMenu.addItem(menuItem("Welcome to Cork", #selector(showWelcome))); help.submenu = helpMenu; main.addItem(help)
         NSApp.mainMenu = main
     }
     @objc private func showLibrary() { openLibrary() }
     @objc private func minimizeAllWindows() { model.controls.requestMinimize() }
     @objc private func addImages() { openLibrary(); model.addImages() }
+    @objc private func importPinterest() { model.run { try await self.model.launchImporter() } }
+    @objc private func showWelcome() { model.showsWelcome = true; openLibrary() }
     @objc private func addNote() { openLibrary(); model.addNote() }
     @objc private func rollWall() { model.run { try await self.model.rollWall() } }
     @objc private func fillEmpty() { model.run { try await self.model.rollWall(fillEmpty: true) } }
@@ -194,6 +202,6 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     @objc private func arrangeItems(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? String, let layout = LayoutKind(rawValue: raw) { model.run { try await self.model.arrange(layout, gap: layout == .greedy ? 16 : 28) } }
     }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Cork", .applicationVersion: "0.6.0", .credits: NSAttributedString(string: "Images and notes on your desktop. A sibling to Tuck and Snap.")]); NSApp.activate(ignoringOtherApps: true) }
+    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Cork", .applicationVersion: "0.8.0", .credits: NSAttributedString(string: "Images and notes on your desktop. A sibling to Tuck and Snap.")]); NSApp.activate(ignoringOtherApps: true) }
     @objc private func quit() { NSApp.terminate(nil) }
 }

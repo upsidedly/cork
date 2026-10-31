@@ -2,6 +2,12 @@
 
 For installation and a quick overview, see the [README](../README.md).
 
+## Start with your Pinterest
+
+Choose **Import from Pinterest…** in Cork's toolbar or File menu. The bundled importer explains its browser-cookie access before connecting, then lets you choose boards and **20 / 50 / 100 / 150 / 200 / All** images per board. Remove unwanted pictures in the review gallery and choose **Add to Cork**. Full instructions, supported browsers and recovery are in the [importer guide](IMPORTER.md). A fresh install shows a welcome screen; file hiding and login launch are optional.
+
+**Choose two colours** stays at the top of Cork's main window. Select any two families and roll from your whole classified library. The **star** saves named favourite corkboards; Load restores their layout, mood, notes and wallpaper while keeping global settings. The **clock** enables minute/hour/day/week, morning/evening or custom automatic rolls. It starts Off, waits during editing and catches up once after sleep. Cork must be running.
+
 ## Put something on the wall
 
 Open Cork from the menu bar. Choose **Add Images…**, paste an image, or drop image files into the library. Cork keeps its own local copy, so moving the original file does not break your wall.
@@ -55,6 +61,8 @@ For other apps, use **Settings → Widgets → Register Widget Provider…**, th
 
 Under **Wallpaper**, keep **System** or choose a local **Image** or **Video**. Cork copies the media into its own storage. Video loops without sound, with a pause control, and pauses during display sleep, an inactive user session, or Reduce Motion. Choosing **System** returns to your Mac's original wallpaper. Custom wallpaper is shown while Cork runs.
 
+The native macOS wallpaper is synchronized with Cork's image, or a video's saved poster frame, so the menu bar takes its colour from the same scene. The original image and scaling options are saved before changing them and restored on **System** or quit. A wallpaper changed outside Cork is preserved on quit. A small local recovery record protects restoration after an interrupted update.
+
 The wall, saved note text, layout, desktop and widget visibility, palette preferences, wallpaper, video pause choice, shortcuts, and default image style restore on the next launch. Enable **Open Cork at login** in Settings after installing the app in Applications. macOS may ask you to approve it in Login Items settings; Cork shows the actual registration state.
 
 ## Minimize every window
@@ -73,7 +81,15 @@ The **dice** button in the library, **Roll Wall** in the menu bar, **⌘R**, or 
 
 Choose a mood under **Settings → Rotation → Next wall**, or leave **Surprise me** selected to switch moods. A mood needs at least eight photos. The current wall and next-roll preference are saved; rolling needs no network or screen access. Nothing changes on a timer.
 
-**Match image colours** coordinates photos with a shared palette. **Colour palette** offers fourteen curated choices, or derives one from the mood and retained images. **Match wallpaper to palette** chooses a compatible background before fitting the photos. Automatic wallpapers must cover the display at its native pixel resolution and retain at least 60% of the source when cropped. If none fits, Cork keeps the current background. Choosing a wallpaper manually turns automatic wallpaper matching off; enable it again when you want coordinated scenes.
+**Match image colours** coordinates photos with a shared palette. **Colour palette** offers twenty-two curated choices, or derives one from the mood and retained images. **Match wallpaper to palette** chooses a compatible background before fitting the photos. Automatic wallpapers must cover the display at its native pixel resolution and retain at least 60% of the source when cropped. If none fits, Cork keeps the current background. Choosing a wallpaper manually turns automatic wallpaper matching off; enable it again when you want coordinated scenes.
+
+Eight palettes use two major colours: **Blue & butter**, **Teal & rust**, **Forest & rose**, **Cobalt & vermilion**, **Plum & ochre**, **Sage & lilac**, **Olive & coral**, and **Espresso & ice**. A mood with the matching ID uses its pair automatically. Cork balances the visible area of both families, including kept prints, while still mixing boards, treatments and aspect ratios. A paired palette needs photos in both families; if a chosen mood lacks one, choose another mood or disable image colour matching. Wallpaper follows one of the families actually present, or uses a quiet neutral; opposing colours are not averaged into an unrelated hue. Paired palettes are built in, while the photo groups themselves come from your imported collection.
+
+For any other pairing, choose **Colour palette → Choose two colours**. Select two different families from Red, Orange, Yellow, Green, Teal, Blue, Violet, Pink, Brown, Cream, Black, Grey and White. This mode searches the entire classified collection; the mood picker is inactive until you return to a preset or automatic palette. **Roll These Colours** applies the saved choice immediately. The ordinary dice and global shortcut use the same saved combination on later rolls.
+
+**Strong colours** requires a chosen family to cover at least 18% of a photo. **Include accents** also accepts coverage from 4%. The counts show what is available before rolling. Grey paper or white margins cannot excuse a strongly unrelated coloured subject. Photos can belong to several families, with measured proportions counting toward the layout balance. Wallpaper follows a represented family or a quiet neutral, and still needs enough real pixels. Fill Empty uses the selected pair without moving existing prints.
+
+Colour analysis runs locally in the background after upgrading an older library. Existing scenes remain visible; custom rolls wait for analysis. Future imports are classified immediately. The cache survives restart, and **Photo details** shows each significant family, its strong/accent label and coverage percentage. Analysis failure preserves the saved wall and offers **Retry Colour Analysis**. Nothing is uploaded and no extra media copies are made.
 
 **Fill Empty** uses those same colour controls while preserving every existing print's position, size, angle and treatment. It can infer the palette from those images or follow your selected palette. It adds photos only where decorated prints fit. **Arrange → Fill Space** instead moves the existing prints without adding photos.
 

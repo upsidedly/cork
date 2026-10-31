@@ -45,7 +45,8 @@ extension BoardRepository {
                 let item: CollectionWallpaper
                 if let old = next.wallpapers.first(where: { $0.id == entry.id }), FileManager.default.fileExists(atPath: wallpapers.appendingPathComponent(old.assetFile).path) {
                     item = CollectionWallpaper(id: entry.id, assetFile: old.assetFile, title: entry.title, sourceURL: entry.sourceURL,
-                        sourceBoard: entry.sourceBoard, palette: old.palette, themeIDs: entry.themeIDs, width: old.width, height: old.height, automatic: entry.automatic ?? old.automatic)
+                        sourceBoard: entry.sourceBoard, palette: old.palette, themeIDs: entry.themeIDs, width: old.width, height: old.height, automatic: entry.automatic ?? old.automatic,
+                        colourProfile: try old.colourProfile ?? wallpaperColourProfile(assetFile: old.assetFile))
                 } else {
                     let sourceURL = URL(fileURLWithPath: entry.path).resolvingSymlinksInPath()
                     let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -64,7 +65,7 @@ extension BoardRepository {
                     guard CGImageDestinationFinalize(destination) else { throw CorkError("Could not finish the wallpaper copy.") }
                     item = CollectionWallpaper(id: entry.id, assetFile: filename, title: entry.title, sourceURL: entry.sourceURL,
                         sourceBoard: entry.sourceBoard, palette: try PaletteAnalysis.colours(image: image), themeIDs: entry.themeIDs,
-                        width: Double(image.width), height: Double(image.height), automatic: entry.automatic)
+                        width: Double(image.width), height: Double(image.height), automatic: entry.automatic, colourProfile: try PaletteAnalysis.profile(image: image))
                 }
                 if let index = next.wallpapers.firstIndex(where: { $0.id == item.id }) { next.wallpapers[index] = item }
                 else { next.wallpapers.append(item) }

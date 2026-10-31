@@ -42,6 +42,7 @@ public struct DesktopSettings: Codable, Equatable, Sendable {
     public var controls: DesktopControlSettings?
     public var hideWidgets: Bool?
     public var scenes: SceneOptions?
+    public var randomizationSchedule: RandomizationSchedule?
     public var widgetsHidden: Bool { hideWidgets ?? false }
     public var sceneOptions: SceneOptions { scenes ?? SceneOptions() }
     public var desktopControls: DesktopControlSettings { controls ?? DesktopControlSettings() }
@@ -52,5 +53,6 @@ public struct DesktopSettings: Codable, Equatable, Sendable {
         try wallpaper.validate()
         try controls?.validate()
         try scenes?.validate()
+        try randomizationSchedule?.validate()
     }
 }

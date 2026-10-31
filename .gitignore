@@ -19,3 +19,10 @@ Collections/
 Images/
 Wallpapers/
 Captures/
+system-wallpaper.json
+favourites.json
+favourites.previous.json
+review.json
+Staging/
+*.dmg
+release-staging/

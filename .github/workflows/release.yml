@@ -1,0 +1,52 @@
+name: Build and release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release
+        required: true
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - name: Preserve an existing published release
+        id: existing
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Select installed SDK
+        if: steps.existing.outputs.exists != 'true'
+        run: echo "CORK_SDK=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+      - name: Verify core and importer
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          ./scripts/check.sh
+          ./scripts/check-importer.sh
+          ./scripts/check-wallpaper-sync.sh
+      - name: Build universal applications and DMG
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          CORK_UNIVERSAL=1 ./scripts/build.sh
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' build/Cork.app/Contents/Info.plist)
+          test "$RELEASE_TAG" = "v$VERSION"
+          ./scripts/package-dmg.sh --no-build
+      - name: Publish DMG and checksum
+        if: steps.existing.outputs.exists != 'true'
+        run: gh release create "$RELEASE_TAG" build/Cork-*-universal.dmg build/Cork-*.sha256 --verify-tag --title "Cork $RELEASE_TAG" --notes-file docs/RELEASE-NOTES.md

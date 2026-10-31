@@ -47,6 +47,7 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
     public var widget: WidgetReference?
     public var widgetState: JSONValue?
     public var colours: [String]?
+    public var colourProfile: ImageColourProfile?
     public var isKept: Bool { kind == .widget || (keepInPlace ?? false) }
     public var isHidden: Bool { hidden ?? false }
     public var isOverlayNote: Bool { kind == .note && includeInLayout == false }
@@ -66,6 +67,7 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
     }
 
     public func validate() throws {
+        try colourProfile?.validate()
         if kind == .image {
             guard !assetFile.isEmpty, assetFile == URL(fileURLWithPath: assetFile).lastPathComponent,
                   !assetFile.hasPrefix("."), assetFile.hasSuffix(".png"), PrintStyle.imageStyles.contains(style) else { throw CorkError("Invalid image filename or image style.") }
