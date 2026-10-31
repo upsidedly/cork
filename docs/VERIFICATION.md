@@ -1,5 +1,15 @@
 # Verification
 
+## 0.9.0 build 17 desktop focus correction — 30 October 2026
+
+The native arm64 app builds without warnings. Focused AppKit checks pass **4/4**: first-press selection/move and one commit, successive moves after the panel origin changes, finishing editing cancels a drag and locks the paper, and resizing preserves aspect ratio and position. They use hidden test windows and reuse the existing build cache.
+
+With an isolated two-item board and eight existing image hardlinks, clicking the wallpaper followed by **⌘R** produced a saved collage. **⌘Z** restored the original items, and **⌘L** opened the library. Native inspection showed the library still visible after Edit Desktop. Window-server metadata confirmed the library at level 4 above editable prints at level 3; Done restored the library to level 0 and prints to desktop level. Wallpaper and locked prints occupy separate levels, so background focus cannot cover the pictures. The automation server rejects pointer drags on borderless desktop panels (`noWindowsAvailable` / `windowNotFoundAtPosition`); physical pointer dragging is therefore not claimed from this run. Direct AppKit event checks cover the changed drag handling.
+
+The existing 0.9.0 release evidence below remains applicable to unchanged importer, model, schedule, wallpaper synchronization and distribution inputs. This focused correction does not rebuild a universal DMG or replace the published release assets.
+
+The local `/Applications/Cork.app` is build 17, with a matching arm64 executable and a valid deep signature. Its live board remained exactly at revision 339 with 34 items and the same desktop settings. Login registration is enabled, and both custom global shortcuts remain registered. The installed wallpaper accepted **⌘L**; Edit Desktop kept the library above all 26 visible prints, and Done restored normal layers. The changed ad hoc signature invalidated the existing Accessibility grant, so its system permission entry requires refresh before trackpad monitoring or cross-app minimization can be claimed again. Screen Recording remains a separate unavailable permission.
+
 ## 0.9.0 release — 30 October 2026
 
 The importer, onboarding, visible two-colour controls, favourites and periodic randomization were built in Swift 6 and verified on the existing Apple silicon/macOS host. Both arm64 and x86_64 release slices compile and link without warnings. Intel hardware and macOS 14 runtime behavior were not exercised on this host.

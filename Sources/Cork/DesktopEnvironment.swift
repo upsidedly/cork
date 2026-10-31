@@ -31,7 +31,8 @@ private enum PlaybackObservation {
 }
 
 @MainActor private final class WallpaperPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var acceptsDesktopFocus = false
+    override var canBecomeKey: Bool { acceptsDesktopFocus }
     override var canBecomeMain: Bool { false }
 }
 
@@ -41,6 +42,9 @@ private enum PlaybackObservation {
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
     private var observation: NSKeyValueObservation?
+    var onDone: (() -> Void)?
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     init(image: CGImage, video: URL?, failure: @escaping @MainActor @Sendable (String) -> Void) {
         self.image = NSImage(cgImage: image, size: .zero)
@@ -76,10 +80,17 @@ private enum PlaybackObservation {
         videoLayer?.frame = bounds
         CATransaction.commit()
     }
-    // This desktop layer consumes clicks while covering files, so hidden file icons
-    // cannot be opened by clicking their old positions. It never becomes key.
-    override func mouseDown(with event: NSEvent) {}
+    // Focus the desktop without raising it above prints or opening the library.
+    // Hidden Finder icons remain covered, including their mouse hit targets.
+    override func mouseDown(with event: NSEvent) {
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKey(); window?.makeFirstResponder(self)
+    }
     override func rightMouseDown(with event: NSEvent) {}
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onDone?() }
+        else { super.keyDown(with: event) }
+    }
     func setPlaying(_ playing: Bool) { if playing { player?.play() } else { player?.pause() } }
     var isPlaying: Bool { (player?.rate ?? 0) > 0 }
     var mediaPlayer: AVPlayer? { player }
@@ -111,6 +122,7 @@ final class DesktopEnvironment {
     @ObservationIgnored private var sessionActive = true
     @ObservationIgnored private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @ObservationIgnored var onChange: (() -> Void)?
+    @ObservationIgnored var onDone: (() -> Void)?
 
     init(wallpapers: URL) {
         self.wallpapers = wallpapers
@@ -123,7 +135,9 @@ final class DesktopEnvironment {
     var videoTime: Double { (panels.values.first?.contentView as? WallpaperView)?.playbackTime ?? 0 }
     var videoLoops: Int { (panels.values.first?.contentView as? WallpaperView)?.loopCount ?? 0 }
     var printLevel: NSWindow.Level {
-        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + (widgetsCovered ? 4 : iconsCovered ? 1 : -1))
+        // Focus can reorder windows within a level. Prints must stay strictly
+        // above the wallpaper even after the background becomes key.
+        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + (widgetsCovered ? 4 : iconsCovered ? 2 : -1))
     }
 
     func apply(_ settings: DesktopSettings) {
@@ -168,16 +182,19 @@ final class DesktopEnvironment {
                 stopPanels()
                 for (id, image) in prepared {
                     guard let screen = DesktopWindows.screen(for: id) else { continue }
-                    let panel = WallpaperPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                    let panel = WallpaperPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    panel.acceptsDesktopFocus = true
                     panel.backgroundColor = .black; panel.isOpaque = true; panel.hasShadow = false
                     panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
                     panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
                     panel.title = "Cork Wallpaper"; panel.identifier = NSUserInterfaceItemIdentifier("cork-wallpaper-\(id)")
                     let video = settings.wallpaper.kind == .video ? settings.wallpaper.assetFile.map { wallpapers.appendingPathComponent($0) } : nil
-                    panel.contentView = WallpaperView(image: image, video: video) { [weak self] message in
+                    let view = WallpaperView(image: image, video: video) { [weak self] message in
                         guard let self, self.mediaKey == key else { return }
                         self.problem = message; self.onChange?()
                     }
+                    view.onDone = { [weak self] in self?.onDone?() }
+                    panel.contentView = view
                     panels[id] = panel
                 }
                 loading = false; syncPanels(); onChange?()
@@ -197,7 +214,9 @@ final class DesktopEnvironment {
         for (id, panel) in panels {
             if let screen = DesktopWindows.screen(for: id) { panel.setFrame(screen.frame, display: true) }
             panel.level = NSWindow.Level(rawValue: hide ? Int(CGWindowLevelForKey(.desktopIconWindow)) + (settings.widgetsHidden ? 3 : 1) : Int(CGWindowLevelForKey(.desktopWindow)) + 1)
-            panel.ignoresMouseEvents = !hide
+            // Finder icons remain above this layer when visible; empty wallpaper
+            // still focuses Cork so its ordinary menu shortcuts work.
+            panel.ignoresMouseEvents = false
             panel.orderFrontRegardless()
             (panel.contentView as? WallpaperView)?.setPlaying(!settings.wallpaper.paused && !reduceMotion && displayAwake && sessionActive)
             if settings.widgetsHidden && !hide, let screen = DesktopWindows.screen(for: id), let base = panel.contentView as? WallpaperView {

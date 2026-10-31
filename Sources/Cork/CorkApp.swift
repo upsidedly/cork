@@ -34,7 +34,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = CorkIcon.menuBarImage(); item.button?.toolTip = "Cork"
         item.button?.setAccessibilityLabel("Cork"); status = item
-        model.onChange = { [weak self] in self?.updateMenu() }
+        model.onChange = { [weak self] in self?.updateMenu(); self?.updateLibraryLevel() }
         model.showLibrary = { [weak self] in self?.openLibrary() }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(scheduleTimeChanged), name: .NSSystemTimeZoneDidChange, object: nil)
@@ -94,7 +94,15 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             window.setContentSize(CGSize(width: 760, height: 600))
             library = NSWindowController(window: window)
         }
+        updateLibraryLevel()
         library?.showWindow(nil); library?.window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func updateLibraryLevel() {
+        // Editing raises the desktop prints temporarily. Keep their inspector
+        // above them even after selecting a print or refreshing the arrangement.
+        let level = model.editing ? NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1) : .normal
+        if let window = library?.window, window.level != level { window.level = level }
     }
 
     private func menuItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {

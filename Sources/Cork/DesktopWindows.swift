@@ -56,6 +56,8 @@ final class DesktopWindows {
                 panel.contentView = content; panels[item.id] = panel
             }
             panel.editing = editing
+            let view = (panel.contentView as? PrintView) ?? (panel.contentView as? WidgetPaperView)?.editor
+            view?.editing = editing
             panel.interactive = item.kind == .widget
             panel.ignoresMouseEvents = !editing && item.kind != .widget
             panel.level = editing ? .floating : baseLevel
@@ -67,11 +69,14 @@ final class DesktopWindows {
             let present = Self.displays.contains { $0.id == item.displayID }
             let centerX = present ? item.x + item.width / 2 : min(max(item.x + item.width / 2, 20), screen.frame.width - 20)
             let centerY = present ? item.y + item.height / 2 : min(max(item.y + item.height / 2, 30), screen.frame.height - 20)
-            panel.setFrame(CGRect(x: screen.frame.minX + centerX - width / 2,
-                                  y: screen.frame.maxY - centerY - height / 2, width: width, height: height), display: false)
-            if let view = (panel.contentView as? PrintView) ?? (panel.contentView as? WidgetPaperView)?.editor {
-                view.item = item; view.editing = editing; view.selected = item.id == selection
-                view.revision = board.revision; view.updateAccessibility(); view.needsDisplay = true
+            if view?.isDragging != true {
+                panel.setFrame(CGRect(x: screen.frame.minX + centerX - width / 2,
+                                      y: screen.frame.maxY - centerY - height / 2, width: width, height: height), display: false)
+                view?.item = item; view?.revision = board.revision
+            }
+            if let view {
+                view.selected = item.id == selection
+                view.updateAccessibility(); view.needsDisplay = true
             }
             (panel.contentView as? WidgetPaperView)?.surface?.updateState(item.widgetState ?? .object([:]))
             (panel.contentView as? WidgetPaperView)?.surface?.setPaused(widgetsPaused || board.hidden)
@@ -79,6 +84,14 @@ final class DesktopWindows {
         }
     }
     func close() { for panel in panels.values { (panel.contentView as? WidgetPaperView)?.stop(); panel.close() }; panels.removeAll() }
+    func select(_ selection: UUID?) {
+        // Selection changes must not reorder windows or reset an in-progress drag.
+        for (id, panel) in panels {
+            if let view = (panel.contentView as? PrintView) ?? (panel.contentView as? WidgetPaperView)?.editor {
+                view.selected = id == selection; view.needsDisplay = true
+            }
+        }
+    }
     func pauseWidgets(_ paused: Bool) { widgetsPaused = paused; for panel in panels.values { (panel.contentView as? WidgetPaperView)?.surface?.setPaused(paused) } }
     func reloadWidgets() {
         for id in Array(panels.keys) where panels[id]?.contentView is WidgetPaperView {

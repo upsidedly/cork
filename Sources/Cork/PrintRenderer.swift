@@ -170,7 +170,9 @@ final class PrintPanel: NSPanel {
 class PrintView: NSView {
     var item: PrintItem
     var image: NSImage?
-    var editing = false
+    var editing = false {
+        didSet { if !editing { dragStart = nil; original = nil } }
+    }
     var selected = false
     var revision = 0
     var onSelect: (() -> Void)?
@@ -181,8 +183,10 @@ class PrintView: NSView {
     private var dragStart: CGPoint?
     private var original: PrintItem?
     private var resizing = false
+    var isDragging: Bool { dragStart != nil }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { editing }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { editing }
 
     init(item: PrintItem, image: NSImage?) {
         self.item = item; self.image = image
@@ -209,9 +213,10 @@ class PrintView: NSView {
         return rect.contains(local) ? self : nil
     }
     override func mouseDown(with event: NSEvent) {
-        guard editing else { return }
-        window?.makeKey(); window?.makeFirstResponder(self); onSelect?()
-        dragStart = NSEvent.mouseLocation; original = item
+        guard editing, let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKey(); window.makeFirstResponder(self); onSelect?()
+        dragStart = window.convertPoint(toScreen: event.locationInWindow); original = item
         let point = convert(event.locationInWindow, from: nil)
         let angle = -item.rotation * .pi / 180
         let dx = point.x - bounds.midX, dy = point.y - bounds.midY
@@ -220,7 +225,8 @@ class PrintView: NSView {
     }
     override func mouseDragged(with event: NSEvent) {
         guard let start = dragStart, let original, let window else { return }
-        let delta = CGPoint(x: NSEvent.mouseLocation.x - start.x, y: NSEvent.mouseLocation.y - start.y)
+        let point = window.convertPoint(toScreen: event.locationInWindow)
+        let delta = CGPoint(x: point.x - start.x, y: point.y - start.y)
         if resizing {
             let width = max(64, min(1600, original.width + delta.x))
             item.width = width; item.height = original.height * width / original.width
@@ -230,7 +236,7 @@ class PrintView: NSView {
             frame.origin.x += delta.x; frame.origin.y += delta.y
             window.setFrameOrigin(frame.origin)
             item.x = original.x + delta.x; item.y = original.y - delta.y
-            dragStart = NSEvent.mouseLocation; self.original = item
+            dragStart = point; self.original = item
         }
     }
     override func mouseUp(with event: NSEvent) {
@@ -240,6 +246,7 @@ class PrintView: NSView {
                    "width": .number(item.width), "height": .number(item.height)], revision)
     }
     override func keyDown(with event: NSEvent) {
+        guard editing else { super.keyDown(with: event); return }
         if event.keyCode == 53 { onDone?(); return }
         if event.keyCode == 51 || event.keyCode == 117 { onDelete?(); return }
         let step: Double = event.modifierFlags.contains(.shift) ? 10 : 1

@@ -6,6 +6,8 @@ Cork turns the existing Mac wallpaper into a wall for images and text notes. Suc
 
 The target is macOS 14+, pointer and keyboard input, one or more displays, all ordinary Spaces. Pictures stay below application windows and pass clicks through while locked. Edit mode temporarily brings pictures forward; Done puts them back. Full-screen apps remain unobstructed. The utility uses a native library/inspector, menus and AppKit desktop windows. It has no account, cloud service, telemetry or background network activity.
 
+Desktop focus uses the app's normal menu responder chain. The wallpaper can become key without opening the library, and prints remain strictly above it even when focusing changes window order. During editing the library sits one level above the floating prints and returns to normal on Done. Selection only updates highlights; it does not reload wallpaper, reorder panels, or reset a drag. Unrelated refreshes preserve an active drag's geometry and starting revision. Pointer deltas use the event's screen position, so moving the panel between events does not introduce drift. Finishing editing cancels unfinished interactions. After a native release build, `scripts/check-desktop-drag.sh` exercises these view-level move/resize/cancel behaviors with hidden AppKit test windows and existing CorkCore objects.
+
 ## Ownership and boundaries
 
 - `CorkCore`: Codable values, geometry/arrangement, validated state mutations, atomic persistence, JSON values, local socket transport and MCP schemas.

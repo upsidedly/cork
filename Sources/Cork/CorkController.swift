@@ -78,6 +78,7 @@ final class CorkController {
             }
             self.onChange?()
         }
+        environment.onDone = { [weak self] in self?.setEditing(false) }
         scheduleDriver.canRun = { [weak self] in guard let self else { return false }; return self.canRollWall && !self.editing }
         scheduleDriver.onFire = { [weak self] schedule in try await self?.scheduledRoll(schedule) }
         scheduleDriver.onChange = { [weak self] in self?.onChange?() }
@@ -143,7 +144,7 @@ final class CorkController {
         if !environment.loading { desktop.refresh(board: board, editing: editing, selection: selection, baseLevel: environment.printLevel) }
         onChange?()
     }
-    func select(_ id: UUID?) { selection = id; refresh() }
+    func select(_ id: UUID?) { selection = id; desktop.select(id); onChange?() }
     func setEditing(_ enabled: Bool) {
         editing = enabled; refresh()
         if enabled { showLibrary?() }

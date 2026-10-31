@@ -24,6 +24,8 @@ Enable **Match collage colours** on an individual note to tint its paper from th
 
 Choose **Edit Desktop** to move items directly on the screen. Drag a print or note to position it; drag its lower-right handle to resize it. The library has size and angle controls, plus exact position and dimensions under **Position & dimensions**. X and Y each have a slider beside their numeric field. Moving or resizing a participating image or note holds that item at its new position and reflows the same photos around it, preserving their identities, treatments and angles. Moving an overlay note leaves the photos alone.
 
+Click Cork's wallpaper to focus its keyboard shortcuts without opening the library: **⌘R** rolls, **⌘Z** undoes, and **⌘L** opens the library. The library stays above desktop items while editing; **Done** returns it to its normal window level. Clicking or dragging an editable print also focuses Cork.
+
 Choose **Arrange → Fill Space** to repack existing prints into the largest free rectangles. Choose **Fill Empty** to keep every existing item in place and add matching photos around it. Enable **Keep in place** on a selected image to protect it during a dice roll or automatic arrangement too. Notes stay put. The widget corner is reserved while widgets are visible; hiding widgets frees that area. **Gallery**, **Grid**, and **Collage** remain available. **Done** or **Esc** locks it again. Locked photos and notes sit below application windows and let mouse clicks pass through to the desktop. Interactive widgets remain playable. Edit mode temporarily brings items forward for moving and resizing.
 
 | Key | Action |
