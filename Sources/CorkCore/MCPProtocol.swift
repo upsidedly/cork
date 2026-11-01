@@ -215,7 +215,7 @@ public struct MCPDispatcher: Sendable {
             return response(.object([
                 "protocolVersion": .string(versions.contains(requested) ? requested : versions[0]),
                 "capabilities": .object(["tools": .object(["listChanged": .bool(false)])]),
-                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.10.1")]),
+                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.11.0")]),
                 "instructions": .string("Use cork_get_board, then add local images (Pinterest downloads come from the Pinterest plugin). Arrange with revision checks, inspect cork_screenshot_desktop, refine geometry, and undo mistakes. Coordinates: upper-left of each full display, points; image responses report pixel-to-point scale. Cork app owns all state.")
             ]))
         }

@@ -52,7 +52,9 @@ actor FixtureDestination: CorkImportDestination {
         }
         let collection = try await repository.loadCollection().0
         let ids = arguments["ids"]?.array?.compactMap(\.string), urls = arguments["source_urls"]?.array?.compactMap(\.string)
-        let selected = collection.photos.filter { ids?.contains($0.id) == true || urls?.contains($0.sourceURL) == true }
+        let filtered = collection.photos.filter { ids == nil && urls == nil || ids?.contains($0.id) == true || urls?.contains($0.sourceURL) == true }
+        let offset = Int(arguments["offset"]?.number ?? 0), limit = Int(arguments["limit"]?.number ?? 500)
+        let selected = Array(filtered.dropFirst(offset).prefix(limit))
         return .object(["photo_count": .number(Double(collection.photos.count)), "capacity": .number(20_000), "photos": try JSONValue.encode(selected), "themes": try JSONValue.encode(collection.themes)])
     }
     func writeCount() -> Int { writes }
@@ -66,7 +68,12 @@ actor FixtureDestination: CorkImportDestination {
             ("Board pagination", boardPagination), ("Image pagination and deduplication", imagePagination),
             ("Incomplete All and repeated pages", incompleteCoverage), ("Rate limits do not retry", rateLimit),
             ("Private review persistence", reviewPersistence), ("Staging measures actual colours", staging),
-            ("Lost commit is reconciled before retry", lostReplyRecovery), ("Removed images never download", removedImages)
+            ("Lost commit is reconciled before retry", lostReplyRecovery), ("Removed images never download", removedImages),
+            ("Daily sync consent and private persistence", dailyPrivacy), ("Daily baseline, new pins and duplicate suppression", dailyBaseline),
+            ("Daily source fairness and hard daily quota", dailyFairness), ("Daily rejected pins stay excluded", dailyExclusions),
+            ("Daily low storage preserves queued metadata", dailyStorage), ("Daily lost reply is reconciled", dailyAmbiguous),
+            ("Daily account and concurrent-run guards", dailyGuards), ("Disabled and same-day checks do nothing", dailyDue),
+            ("Daily byte budget blocks another download", dailyByteBudget)
         ]
         var failures = 0
         for (name, action) in cases {

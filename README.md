@@ -27,7 +27,7 @@ Open Cork from the menu bar. Choose **Add Images or Videos…**, paste an image,
 
 Videos use the same paper treatments. They stay still until you hover, then loop silently. Move away and the cover returns. Click a video and press **Space** for keyboard playback; **Escape** stops it. Reduce Motion turns off hover playback while keeping this explicit control. MP4, MOV and M4V files up to 200 MB and ten minutes are supported. Cork measures five frames before including a video in a colour-matched collage.
 
-**Double-click a video** to zoom it into the wallpaper. **Double-click the wallpaper again**, or press **Escape**, to return the print and previous background. **Return** opens the same effect from a focused video. The preview stays behind app windows and keeps your saved layout intact; it reuses the existing clip. Reduce Motion removes the zoom.
+**Double-click a video** to zoom it into the wallpaper, covering the rest of that display's collage. **Double-click the wallpaper again**, or press **Escape**, to bring everything back. **Return** opens the same effect from a focused video. The preview stays behind app windows and keeps your saved layout intact; it reuses the existing clip. Reduce Motion removes the zoom.
 
 Choose **New Note** for editable text on **Flat** paper or a shaded **Sticky**. Check **Include in layout** to reserve its space, or untick it to float the note over your pictures. **Match collage colours** tints the paper to suit the visible photos.
 
@@ -56,6 +56,8 @@ Choose **Import from Pinterest…** in Cork. The companion **cork-importer** con
 Before connecting, the importer asks for explicit consent to read **Pinterest cookies only**. Chrome-based browsers may show a macOS prompt for their Safe Storage key. Cookies remain in memory, are sent only to Pinterest, and clear on disconnect or quit. Supported profiles: Chrome, Chromium, Brave, Edge and Firefox. Safari is not supported yet. This uses Pinterest's website endpoints, so website changes can affect importing.
 
 Image colours are measured locally. Pin links, source-board identity, aspect ratios, strong colours and accents travel into Cork. A collage mixes sources within the selected palette; three or more matching boards use about a 40% cap per board, and two use about 60%. Large libraries use a bounded, seeded candidate sample. Cork supports up to **20,000 library images**, subject to available disk space.
+
+Want new pins automatically? Choose boards, then **Keep Selected Boards Fresh Daily…**. Daily sync asks for separate recurring browser access and starts from today's pins. It checks once a day and adds new images to your collection with colour metadata, without rebuilding Cork or changing the current wall. The default is **10 new images a day**, with a **32 MB daily image budget** and a **2 GB free-space floor**. **Daily Sync…** shows status and lets you pause or remove the connection.
 
 See [the importer guide](docs/IMPORTER.md) for privacy, storage and recovery details.
 

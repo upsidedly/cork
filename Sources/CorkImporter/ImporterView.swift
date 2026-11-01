@@ -8,6 +8,9 @@ struct ImporterView: View {
             HStack {
                 Label("Cork Importer", systemImage: "square.and.arrow.down").font(.headline)
                 Spacer()
+                Button("Daily Sync…", systemImage: "arrow.clockwise") {
+                    model.showsDailySync = true
+                }.disabled(model.busy)
                 if let account = model.account {
                     Text(account.name).font(.callout).foregroundStyle(.secondary)
                     Button("Disconnect") { model.disconnect() }.disabled(model.busy).accessibilityLabel("Disconnect Pinterest")
@@ -33,9 +36,10 @@ struct ImporterView: View {
                 if model.busy { ProgressView().controlSize(.small) }
                 Text(model.status).font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
-                if model.busy { Button("Stop") { model.stop() } }
+                if model.busy && !model.changingDailySchedule { Button("Stop") { model.stop() } }
             }.padding(14).frame(minHeight: 42)
         }.frame(minWidth: 720, minHeight: 500)
+            .sheet(isPresented: $model.showsDailySync) { DailySyncView(model: model) }
     }
     private var connect: some View {
         ScrollView {
@@ -120,6 +124,8 @@ struct ImporterView: View {
             }.listStyle(.inset).disabled(model.busy)
             Text(model.quotaTotal > 20_000 ? "Select at most 20,000 images per review. Reduce a quota or choose fewer boards." : "\(model.selected.count) boards · up to \(model.quotaTotal) images. Full-size keepers may use about \(max(1, model.quotaTotal * 2)) MB in Cork; previews stay in memory.")
                 .font(.caption).foregroundStyle(.secondary)
+            Button("Keep Selected Boards Fresh Daily…") { model.showsDailySync = true }
+                .disabled(model.selected.isEmpty || model.busy)
         }.padding(22)
     }
     private var review: some View {

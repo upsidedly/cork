@@ -1,11 +1,12 @@
 import Foundation
 import Security
+import LocalAuthentication
 import CommonCrypto
 import CryptoKit
 import CSQLite
 import CorkCore
 
-public struct BrowserProfile: Identifiable, Equatable, Sendable {
+public struct BrowserProfile: Codable, Identifiable, Equatable, Sendable {
     public var browser: String
     public var name: String
     public var directory: URL
@@ -110,10 +111,18 @@ public actor BrowserCookieReader {
     private let key: @Sendable (BrowserProfile) throws -> Data
     public init(key: @escaping @Sendable (BrowserProfile) throws -> Data = BrowserCookieReader.safeStorageKey) { self.key = key }
     public nonisolated static func safeStorageKey(_ profile: BrowserProfile) throws -> Data {
+        try safeStorageKey(profile, allowInteraction: true)
+    }
+    public nonisolated static func safeStorageKey(_ profile: BrowserProfile, allowInteraction: Bool) throws -> Data {
         guard let service = profile.service, let account = profile.account else { throw CorkError("This browser has no supported macOS cookie key.") }
         var value: CFTypeRef?
-        let status = SecItemCopyMatching([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account,
-            kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne] as CFDictionary, &value)
+        var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account,
+            kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne]
+        if !allowInteraction {
+            let context = LAContext(); context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext] = context
+        }
+        let status = SecItemCopyMatching(query as CFDictionary, &value)
         guard status == errSecSuccess, let secret = value as? Data, !secret.isEmpty else {
             throw CorkError("macOS did not allow access to \(profile.browser)'s Safe Storage key. No connection was saved. You can cancel or retry the browser connection.")
         }

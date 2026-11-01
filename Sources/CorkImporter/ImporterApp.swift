@@ -3,7 +3,20 @@ import SwiftUI
 import CorkImportCore
 
 @main enum ImporterApp {
-    @MainActor static func main() { ImporterDelegate.run() }
+    @MainActor static func main() async {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.contains(where: { ["--daily-sync", "--daily-now", "--daily-status", "--exclude-pin"].contains($0) }) {
+            _ = NSApplication.shared; NSApp.setActivationPolicy(.prohibited)
+            // Bound a background job even if an OS file-access request stalls.
+            // Cork owns atomic imports; the next check reconciles stable IDs.
+            let deadline = Task {
+                do { try await Task.sleep(for: .seconds(300)) } catch { return }
+                exit(75)
+            }
+            let code = await DailySyncCommand.run(arguments); deadline.cancel(); exit(code)
+        }
+        ImporterDelegate.run()
+    }
 }
 
 @MainActor final class ImporterDelegate: NSObject, NSApplicationDelegate {

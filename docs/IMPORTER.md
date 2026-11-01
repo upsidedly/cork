@@ -12,6 +12,24 @@ Select boards and a quota for each: **20** by default, **50**, **100**, **150**,
 
 Review the gallery. Each image has a Remove/Restore button. Filter by source board, Keep All/Remove All within that filter, and turn on Show removed to recover discarded choices. Only keepers download at full size. **Create a collage after import** is optional; an existing wall is otherwise unchanged.
 
+## Daily Pinterest sync
+
+After connecting and selecting boards, choose **Keep Selected Boards Fresh Daily…**. Set the local check time (9 AM by default), choose up to **5, 10 or 20 new images per day** (10 by default), read the recurring-access disclosure and tick its initially unchecked consent box. Cork and its bundled importer must be installed in Applications.
+
+The first check records the latest 100 image pins per selected board as a baseline. It downloads none of those older pins. Later checks inspect that recent window and queue genuinely new pin IDs. This is a bounded recent-feed check, not a complete change archive: pins outside the newest 100 image entries between checks can be missed. Pinterest video pins are skipped.
+
+New images get the same local colour measurements, source-board identity, aspect ratio and mood metadata as a manual import. Sources take turns within the daily limit, with the first source rotating between checks. Existing Cork pin URLs are reconciled before importing; rejected pin IDs stay excluded. New images join future dice rolls without an app rebuild. The visible collage is never rolled automatically by the importer.
+
+Daily sync has a **32 MB image-download budget per local day** and stops downloads below **2 GB free space**. Transfer attempts reserve their allowance before network access; a failed or interrupted response conservatively consumes that reservation until the next day. **Check Now** respects both daily limits. The queue holds at most 2,000 pin metadata records, and seen/excluded histories are bounded to 100,000 IDs. No full-resolution archive is retained.
+
+**Daily Sync…** shows the saved boards, last check and result. **Pause** removes the scheduled job while retaining the connection for Resume. **Remove Connection** also removes the profile bookmark, account name and recurring consent; previously imported images and exclusions remain. Choose Boards returns to the normal connection flow for changing sources. Manual gallery Remove/Restore decisions also update daily exclusions.
+
+macOS runs the opt-in job through `~/Library/LaunchAgents/dev.upsided.cork-importer.daily.plist`. A missed calendar check coalesces after wake. The job can open Cork in the background to receive images; it does not open the library. A run is limited to five minutes and concurrent runs are rejected. Automatic checks run at most once per local day, including after a failed check; Check Now is an explicit retry.
+
+Recurring access is separate from one-time import consent. Only a read-only security-scoped profile-folder bookmark and source choices are remembered. Each check rereads Pinterest cookie rows and uses an in-memory session. No cookies or browser keys are saved. Background Safe Storage reads disallow interactive authentication; denied/expired access stops the check and reports a reconnect message instead of showing a password prompt. The next check can use a renewed browser session. Daily metadata lives separately in the private `Cork Importer/Daily` folder, so a background run cannot discard a manual review.
+
+The bundled executable also accepts `--daily-status` (counts and status), `--daily-sync` (scheduled check), `--daily-now` (explicit check) and repeated `--exclude-pin ID` arguments. These commands do not grant access or enable an unconfigured connection.
+
 ## Browser privacy
 
 - Profile discovery looks for supported cookie-store paths; it does not read cookie values or Keychain secrets.

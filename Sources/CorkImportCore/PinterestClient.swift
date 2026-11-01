@@ -72,6 +72,7 @@ public struct NativeImportHTTP: ImportHTTP {
 public struct PinterestAccount: Sendable, Equatable {
     public var username: String
     public var name: String
+    public init(username: String, name: String) { self.username = username; self.name = name }
 }
 public struct PinterestBoard: Codable, Identifiable, Equatable, Sendable {
     public var id: String

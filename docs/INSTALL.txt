@@ -17,6 +17,10 @@ its scoped browser-cookie access and asks for consent. macOS may ask for
 the selected browser's Safe Storage key. You can cancel that request.
 The session is kept in memory and is sent only to Pinterest.
 
+Daily Pinterest sync is optional and starts off. It asks for separate recurring
+access and remembers a read-only profile bookmark, never cookies or keys.
+Pause or Remove Connection from the importer's Daily Sync button.
+
 Accessibility is optional for minimizing other apps. Screen Recording is
 optional for explicitly requested desktop screenshots. Neither is needed
 for importing, arranging or randomizing your images.

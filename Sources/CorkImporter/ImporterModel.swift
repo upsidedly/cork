@@ -8,7 +8,7 @@ import CorkImportCore
     enum Step { case connect, boards, review, complete }
     var step = Step.connect
     var profiles: [BrowserProfile] = []
-    var profileID = ""
+    var profileID = "" { didSet { if profileID != oldValue { consent = false; dailyConsent = false } } }
     var consent = false
     var account: PinterestAccount?
     var boards: [PinterestBoard] = []
@@ -24,7 +24,13 @@ import CorkImportCore
     var showRemoved = false
     var filterBoard = ""
     var completionNote: String?
+    var dailySettings = DailySyncSettings()
+    var dailyState = DailySyncState()
+    var dailyConsent = false
+    var showsDailySync = false
+    var changingDailySchedule = false
     @ObservationIgnored let store = ImportSessionStore()
+    @ObservationIgnored let dailyStore: DailySyncStore
     @ObservationIgnored let previews = ImportPreviewCache()
     @ObservationIgnored private var client: PinterestClient?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -32,15 +38,31 @@ import CorkImportCore
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var coordinator: ImportCoordinator?
     @ObservationIgnored private var scopedDirectory: URL?
+    init(dailyStore: DailySyncStore = DailySyncStore()) { self.dailyStore = dailyStore }
     var quotaTotal: Int { boards.filter { selected.contains($0.id) }.reduce(0) { $0 + ((quotas[$1.id] ?? 20) == 0 ? $1.pinCount : min(quotas[$1.id] ?? 20, $1.pinCount)) } }
     var visibleImages: [PinterestImage] { review.images.filter { (showRemoved || !review.removed.contains($0.id)) && (filterBoard.isEmpty || $0.boardID == filterBoard) } }
     var importedCount: Int { review.committed.intersection(Set(review.keepers.map(\.id))).count }
+    var dailyTime: Date {
+        get { Calendar.current.date(bySettingHour: dailySettings.hour, minute: dailySettings.minute, second: 0, of: Date()) ?? Date() }
+        set {
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+            dailySettings.hour = parts.hour ?? 9; dailySettings.minute = parts.minute ?? 0
+        }
+    }
+    var dailyStatus: String {
+        if dailyState.lastMessage == "Checking Pinterest…", let date = dailyState.lastAttempt, Date().timeIntervalSince(date) > 310 {
+            return "The last check was interrupted. Confirmed imports are safe; check again or wait for tomorrow."
+        }
+        return dailyState.lastMessage
+    }
 
     func start() {
         profiles = BrowserProfile.available(); profileID = profiles.first?.id ?? ""
         perform {
             self.resumable = try await self.store.load()
             try await self.store.clearStaging()
+            self.dailySettings = try await self.dailyStore.settings()
+            self.dailyState = try await self.dailyStore.state()
         }
     }
     func perform(_ work: @escaping @MainActor () async throws -> Void) {
@@ -94,6 +116,7 @@ import CorkImportCore
     }
     func disconnect() {
         perform {
+            try await self.updateDaily(enabled: false, forget: true)
             await self.client?.disconnect(); self.client = nil; self.account = nil; self.consent = false
             if !self.review.images.isEmpty { self.resumable = self.review }
             self.boards = []; self.selected = []; self.step = .connect; self.status = "Disconnected. The in-memory browser session was cleared."
@@ -101,7 +124,7 @@ import CorkImportCore
     }
     func startAnother() {
         review = ImportReview(images: []); resumable = nil; completionNote = nil
-        filterBoard = ""; showRemoved = false; step = .connect; consent = false; status = ""
+        filterBoard = ""; showRemoved = false; step = .connect; consent = false; dailyConsent = false; status = ""
     }
     func fetch() {
         guard let client, !selected.isEmpty else { return }
@@ -142,7 +165,10 @@ import CorkImportCore
     private func saveReview() {
         saveTask?.cancel(); let snapshot = review
         saveTask = Task { [weak self, store] in
-            do { try await Task.sleep(for: .milliseconds(200)); try await store.save(snapshot) }
+            do {
+                try await Task.sleep(for: .milliseconds(200)); try await store.save(snapshot)
+                try await self?.dailyStore.exclude(snapshot.removed, restore: Set(snapshot.images.map(\.id)).subtracting(snapshot.removed))
+            }
             catch is CancellationError {} catch { self?.error = "Could not save the review: \(error.localizedDescription)" }
         }
     }
@@ -198,4 +224,77 @@ import CorkImportCore
         }
     }
     func openPinterest() { if let url = URL(string: "https://www.pinterest.com/") { NSWorkspace.shared.open(url) } }
+
+    func enableDaily() {
+        guard dailyConsent, let client, let account,
+              let profile = profiles.first(where: { $0.id == profileID }), !selected.isEmpty else { return }
+        perform {
+            let previous = try await self.dailyStore.settings()
+            var settings = self.dailySettings
+            settings.enabled = true; settings.consentVersion = 1; settings.profile = profile; settings.username = account.username
+            settings.boards = self.boards.filter { self.selected.contains($0.id) }
+            settings.bookmark = try profile.directory.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
+            try settings.validate()
+            guard let executable = Bundle.main.executableURL else { throw CorkError("Importer executable is missing.") }
+            // Validate the installed location before storing any daily consent.
+            _ = try DailySyncAgent.definition(executable: executable, settings: settings)
+            try await self.dailyStore.save(settings)
+            do {
+                self.status = "Recording today's board baseline; older pins won't be downloaded…"
+                try await self.openCork(activate: false)
+                self.dailyState = try await PinterestDailySync(store: self.dailyStore).run(source: client, force: true)
+                try Task.checkCancellation(); self.changingDailySchedule = true
+                try await DailySyncAgent.set(settings, executable: executable)
+                self.dailySettings = settings; self.dailyConsent = false; self.showsDailySync = true
+                self.client = nil; self.account = nil; self.consent = false; self.step = .connect
+                self.status = "Daily sync is enabled. New pins will be added within your storage limits."
+                self.changingDailySchedule = false
+            } catch {
+                self.changingDailySchedule = false
+                try await self.dailyStore.save(previous)
+                self.client = nil; self.account = nil; self.consent = false; self.step = .connect
+                throw error
+            }
+        }
+    }
+    private func updateDaily(enabled: Bool, forget: Bool = false) async throws {
+        let previous = try await dailyStore.settings()
+        var next = previous; next.enabled = enabled
+        if forget { next.profile = nil; next.bookmark = nil; next.consentVersion = 0; next.username = "" }
+        if previous == next { dailySettings = next; return }
+        guard let executable = Bundle.main.executableURL else { throw CorkError("Importer executable is missing.") }
+        try await dailyStore.save(next)
+        do { try await DailySyncAgent.set(next, executable: executable); dailySettings = next }
+        catch { try await dailyStore.save(previous); throw error }
+    }
+    func setDailyEnabled(_ enabled: Bool) {
+        perform {
+            self.changingDailySchedule = true
+            defer { self.changingDailySchedule = false }
+            try await self.updateDaily(enabled: enabled)
+            self.status = enabled ? "Daily sync resumed." : "Daily sync paused."
+        }
+    }
+    func forgetDaily() {
+        perform {
+            self.changingDailySchedule = true
+            defer { self.changingDailySchedule = false }
+            try await self.updateDaily(enabled: false, forget: true)
+            self.dailyConsent = false
+            self.status = "Daily connection removed. Imported images and exclusions are kept."
+        }
+    }
+    func checkDaily() {
+        perform {
+            self.status = "Checking for new Pinterest pins…"
+            do { try await DailySyncCommand.checkNow() }
+            catch { self.dailyState = try await self.dailyStore.state(); throw error }
+            self.dailyState = try await self.dailyStore.state(); self.status = self.dailyState.lastMessage
+        }
+    }
+    func chooseDailyBoards() { showsDailySync = false; step = account == nil ? .connect : .boards }
+    func reloadDaily() async {
+        do { dailySettings = try await dailyStore.settings(); dailyState = try await dailyStore.state() }
+        catch { self.error = error.localizedDescription }
+    }
 }
