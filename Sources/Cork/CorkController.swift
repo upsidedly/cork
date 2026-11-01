@@ -709,6 +709,7 @@ final class CorkController {
             "icons_hidden": .bool(environment.iconsCovered), "loading_wallpaper": .bool(environment.loading),
             "widgets_hidden": .bool(environment.widgetsCovered), "detected_widgets": .number(Double(environment.detectedWidgets)),
             "widget_cover_windows": .number(Double(environment.widgetCoverCount)),
+            "keyboard_focused": .bool(environment.keyboardFocused),
             "menu_bar_wallpaper_synced": .bool(environment.menuBarSynchronized),
             "expanded_video": environment.previewItemID.map { .string($0.uuidString) } ?? .null,
             "returning_video": .bool(environment.previewReturning),

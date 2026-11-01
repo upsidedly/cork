@@ -30,10 +30,25 @@ private enum PlaybackObservation {
     }
 }
 
-@MainActor private final class WallpaperPanel: NSPanel {
+@MainActor final class WallpaperPanel: NSPanel {
     var acceptsDesktopFocus = false
     override var canBecomeKey: Bool { acceptsDesktopFocus }
     override var canBecomeMain: Bool { false }
+
+    func focusDesktop() {
+        guard acceptsDesktopFocus else { return }
+        makeKey(); makeFirstResponder(contentView)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if super.performKeyEquivalent(with: event) { return true }
+        guard acceptsDesktopFocus, isKeyWindow || event.window === self, event.type == .keyDown,
+              event.modifierFlags.contains(.command), !event.isARepeat else { return false }
+        // A nonactivating desktop panel can own keyboard focus while another
+        // app still owns the menu bar. Route through Cork's real menu so its
+        // targets, modifiers and validation stay identical to the library.
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
+    }
 }
 
 @MainActor final class WallpaperView: NSView {
@@ -46,6 +61,7 @@ private enum PlaybackObservation {
     var onDoubleClick: (() -> Void)?
     private(set) var previewSurface: VideoWallpaperSurface?
     override var acceptsFirstResponder: Bool { true }
+    override var needsPanelToBecomeKey: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     init(image: CGImage, video: URL?, failure: @escaping @MainActor @Sendable (String) -> Void) {
@@ -85,9 +101,8 @@ private enum PlaybackObservation {
     // Focus the desktop without raising it above prints or opening the library.
     // Hidden Finder icons remain covered, including their mouse hit targets.
     override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { onDoubleClick?(); return }
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKey(); window?.makeFirstResponder(self)
+        (window as? WallpaperPanel)?.focusDesktop()
+        if event.clickCount == 2 { onDoubleClick?() }
     }
     override func rightMouseDown(with event: NSEvent) {}
     override func keyDown(with event: NSEvent) {
@@ -141,15 +156,18 @@ final class DesktopEnvironment {
     @ObservationIgnored private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @ObservationIgnored private let motionPreference: @MainActor () -> Bool
     @ObservationIgnored private let presentingWindows: Bool
+    @ObservationIgnored private let widgetSurfaces: @MainActor () -> [DesktopWidgetSurface]
     @ObservationIgnored private var preview: VideoWallpaperPreview?
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored var onDone: (() -> Void)?
 
     init(wallpapers: URL, systemWallpaper: SystemWallpaperSync? = nil, presentingWindows: Bool = true,
-         motionPreference: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+         motionPreference: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         widgetSurfaces: @escaping @MainActor () -> [DesktopWidgetSurface] = { DesktopWidgetSurfaces.read() }) {
         self.wallpapers = wallpapers
         self.systemWallpaper = systemWallpaper ?? SystemWallpaperSync(journalURL: wallpapers.deletingLastPathComponent().appendingPathComponent("system-wallpaper.json"))
         self.presentingWindows = presentingWindows; self.motionPreference = motionPreference; reduceMotion = motionPreference()
+        self.widgetSurfaces = widgetSurfaces
     }
     var previewItemID: UUID? { preview?.item.id }
     private var previewSnapshot: PrintItem? { preview?.item }
@@ -159,6 +177,7 @@ final class DesktopEnvironment {
     var menuBarSynchronized: Bool { (settings.wallpaper.kind != .system || currentPreviewSurface != nil) && systemWallpaper.synchronized }
     var windowNumbers: Set<Int> { Set(panels.values.map(\.windowNumber) + widgetMasks.map(\.windowNumber)) }
     var widgetCoverCount: Int { widgetMasks.count }
+    var keyboardFocused: Bool { panels.values.contains { $0.isKeyWindow && $0.firstResponder === $0.contentView } }
     var isVideoPlaying: Bool { panels.values.contains { ($0.contentView as? WallpaperView)?.isPlaying == true } }
     var videoTime: Double { currentPreviewSurface?.playbackTime ?? (panels.values.first?.contentView as? WallpaperView)?.playbackTime ?? 0 }
     var videoLoops: Int { currentPreviewSurface?.loopCount ?? (panels.values.first?.contentView as? WallpaperView)?.loopCount ?? 0 }
@@ -215,10 +234,14 @@ final class DesktopEnvironment {
                 if settings.wallpaper.kind != .system, let url = sources.first?.1 {
                     try systemWallpaper.apply(url, displays: sources.map(\.0))
                 }
+                // Native wallpaper loading can replace the focused panel after
+                // a roll. Transfer focus only if it still belongs to that panel
+                // now, so switching to another app during the load wins.
+                let focusedDisplay = panels.first(where: { $0.value.isKeyWindow })?.key
                 stopPanels()
                 for (id, image) in prepared {
                     guard let screen = DesktopWindows.screen(for: id) else { continue }
-                    let panel = WallpaperPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    let panel = WallpaperPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
                     panel.acceptsDesktopFocus = true
                     panel.backgroundColor = .black; panel.isOpaque = true; panel.hasShadow = false
                     panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
@@ -234,7 +257,9 @@ final class DesktopEnvironment {
                     panel.contentView = view
                     panels[id] = panel
                 }
-                loading = false; installPreview(); syncPanels(); onChange?()
+                loading = false; installPreview(); syncPanels()
+                if presentingWindows, let focusedDisplay { panels[focusedDisplay]?.focusDesktop() }
+                onChange?()
             } catch is CancellationError {} catch {
                 guard mediaKey == key else { return }
                 loading = false; problem = error.localizedDescription
@@ -247,7 +272,7 @@ final class DesktopEnvironment {
     }
     private func syncPanels() {
         let hide = settings.hideDesktopFiles
-        let widgets = DesktopWidgetSurfaces.read(); detectedWidgets = widgets.count
+        let widgets = widgetSurfaces(); detectedWidgets = widgets.count
         stopWidgetMasks()
         for (id, panel) in panels {
             if let screen = DesktopWindows.screen(for: id) { panel.setFrame(screen.frame, display: true) }
@@ -269,6 +294,7 @@ final class DesktopEnvironment {
                     mask.title = "Cork Widget Cover"
                     let maskView = WidgetWallpaperView(image: base.displayImage, player: base.mediaPlayer,
                         canvas: CGRect(x: screen.frame.minX - rect.minX, y: screen.frame.minY - rect.minY, width: screen.frame.width, height: screen.frame.height))
+                    maskView.onFocus = { [weak panel] in panel?.focusDesktop() }
                     maskView.onDoubleClick = { [weak self] in self?.toggleCurrentPreview() }; mask.contentView = maskView
                     if presentingWindows { mask.orderFrontRegardless() }; widgetMasks.append(mask)
                 }
