@@ -10,9 +10,13 @@ Choose **Import from Pinterest…** in Cork's toolbar or File menu. The bundled 
 
 ## Put something on the wall
 
-Open Cork from the menu bar. Choose **Add Images…**, paste an image, or drop image files into the library. Cork keeps its own local copy, so moving the original file does not break your wall.
+Open Cork from the menu bar. Choose **Add Images or Videos…**, paste an image, or drop media files into the library. Cork keeps its own local copy, so moving the original file does not break your wall.
 
-Select an image and choose **Tape**, **Pushpin**, **Polaroid**, or **Frame**. An optional title becomes the Polaroid caption in marker lettering. Leave it blank for an unmarked print. Images keep their aspect ratio inside the print.
+Select an image and choose **Tape**, **Pushpin**, **Polaroid**, or **Frame**. An optional title becomes the Polaroid caption in marker lettering. Leave it blank for an unmarked print. Images and videos keep their aspect ratio inside the print.
+
+A video looks like a still print until hovered, then loops silently. Moving away restores the still and releases playback. Click a video and press **Space** to play or pause, or **Escape** to stop. With Reduce Motion, only explicit keyboard or accessibility playback runs. MP4, MOV and M4V files may be up to 200 MB and ten minutes; import creates an owned copy and a static cover.
+
+Video covers participate in layout and dominant-colour balance. Five spread-out frames are measured locally, and every sample must fit the requested colour pair before a video joins a matching roll. This is a bounded sample of the clip, not semantic analysis of every frame.
 
 Choose **New Note** for editable text. **Flat** uses solid paper; **Sticky** adds shading and a curled corner. Choose a paper color, write your text, and select **Save Note**. Titles are optional.
 
@@ -26,12 +30,12 @@ Choose **Edit Desktop** to move items directly on the screen. Drag a print or no
 
 Click Cork's wallpaper to focus its keyboard shortcuts without opening the library: **⌘R** rolls, **⌘Z** undoes, and **⌘L** opens the library. The library stays above desktop items while editing; **Done** returns it to its normal window level. Clicking or dragging an editable print also focuses Cork.
 
-Choose **Arrange → Fill Space** to repack existing prints into the largest free rectangles. Choose **Fill Empty** to keep every existing item in place and add matching photos around it. Enable **Keep in place** on a selected image to protect it during a dice roll or automatic arrangement too. Notes stay put. The widget corner is reserved while widgets are visible; hiding widgets frees that area. **Gallery**, **Grid**, and **Collage** remain available. **Done** or **Esc** locks it again. Locked photos and notes sit below application windows and let mouse clicks pass through to the desktop. Interactive widgets remain playable. Edit mode temporarily brings items forward for moving and resizing.
+Choose **Arrange → Fill Space** to repack existing prints into the largest free rectangles. Choose **Fill Empty** to keep every existing item in place and add matching photos around it. Enable **Keep in place** on a selected image to protect it during a dice roll or automatic arrangement too. Notes stay put. The widget corner is reserved while widgets are visible; hiding widgets frees that area. **Gallery**, **Grid**, and **Collage** remain available. **Done** or **Esc** locks it again. Locked photos and notes sit below application windows and let mouse clicks pass through to the desktop. Video prints accept hover and keyboard playback; interactive widgets remain playable. Edit mode temporarily brings items forward for moving and resizing.
 
 | Key | Action |
 | --- | --- |
 | ⌘L | Open the library while Cork is active |
-| ⌘O | Add images while Cork is active |
+| ⌘O | Add images or videos while Cork is active |
 | ⌘N | New note while Cork is active |
 | ⌘R | Roll a new wall from the rotation collection |
 | ⌃⌥⌘R | Randomize from any app; configurable in Settings |
@@ -126,12 +130,13 @@ Add this server through your agent's MCP settings and reconnect it. The bundled 
 | `cork_register_widgets` | Copy and register a selected app’s local widget package |
 | `cork_add_widget` | Add a stateful interactive widget and reflow photos around it |
 | `cork_get_collection` | Inspect moods, counts, and per-photo metadata |
-| `cork_import_collection` | Import local photos and their curated metadata without changing the wall |
+| `cork_import_collection` | Import local image/video prints and curated metadata without changing the wall |
 | `cork_get_wallpapers` | Inspect palettes, wallpaper metadata and native-resolution eligibility |
 | `cork_import_wallpapers` | Import selected large local wallpapers and provenance |
 | `cork_roll_wall` | Roll a saved, undoable palette, wallpaper and photo composition |
 | `cork_fill_empty` | Keep existing items and fill the remaining space, optionally matching colours |
 | `cork_add_image` | Import a selected local image, with optional source URL |
+| `cork_add_video` | Import a selected local MP4/MOV/M4V as a still print with muted hover playback |
 | `cork_add_note` | Create a Flat or Sticky text note |
 | `cork_update_items` | Move, resize, style, hide/show, recolour, edit notes or widget state, or keep images in place atomically |
 | `cork_arrange` | Lay out all or selected items on one display |
@@ -144,7 +149,7 @@ Add this server through your agent's MCP settings and reconnect it. The bundled 
 | `cork_minimize_all_windows` | Minimize application windows when requested; requires Accessibility |
 | `cork_screenshot_desktop` | Return a desktop PNG as an MCP image and a local file |
 
-For Pinterest, the agent uses the **Pinterest plugin** to find and download selected pins, then passes the returned local paths to `cork_add_image`. Cork does not need Pinterest credentials. A useful request is: “Download these pins, put them on my Cork wall, arrange them around the wallpaper, and show me the desktop.”
+For Pinterest, the agent uses the **Pinterest plugin** to find and download selected pins, then passes the returned local paths to `cork_add_image`. Cork does not need Pinterest credentials. An authorized TikTok connector can similarly download selected clips for `cork_add_video` or a collection manifest with `kind: "video"`; Cork itself makes no TikTok requests. A useful request is: “Download these pins, put them on my Cork wall, arrange them around the wallpaper, and show me the desktop.”
 
 Agent coordinates start at the **upper-left of each display, in logical points**. Width and height include the decoration; rotation is clockwise. Screenshots report their pixel-to-point scale. Batch edits and arrangement accept `expected_revision` so a stale agent cannot silently overwrite your newer manual layout.
 

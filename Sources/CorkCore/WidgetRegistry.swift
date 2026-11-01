@@ -11,7 +11,7 @@ public enum WidgetPlacement {
     public static func position(in board: Board, display: DisplayInfo, width: Double, height: Double,
                                 x: Double? = nil, y: Double? = nil) throws -> (x: Double, y: Double) {
         if let x, let y { return (x, y) }
-        let fixed = board.items.filter { $0.kind != .image || $0.isKept }
+        let fixed = board.items.filter { !$0.isVisualPrint || $0.isKept }
         let spaces = try GreedyPacking.spaces(display: display, obstacles: fixed, gap: 24, hideWidgets: board.desktop.widgetsHidden)
         let candidates = spaces.compactMap { space -> GreedyPacking.Rect? in
             let rect = GreedyPacking.Rect(x: x ?? space.x, y: y ?? space.y, width: width, height: height)

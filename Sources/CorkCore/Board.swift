@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ItemKind: String, Codable, Sendable { case image, note, widget }
+public enum ItemKind: String, Codable, Sendable { case image, video, note, widget }
 
 public enum NoteColor: String, Codable, CaseIterable, Sendable { case yellow, cream, sage, rose, blue, gray }
 
@@ -48,6 +48,8 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
     public var widgetState: JSONValue?
     public var colours: [String]?
     public var colourProfile: ImageColourProfile?
+    public var video: VideoAttachment?
+    public var isVisualPrint: Bool { kind == .image || kind == .video }
     public var isKept: Bool { kind == .widget || (keepInPlace ?? false) }
     public var isHidden: Bool { hidden ?? false }
     public var isOverlayNote: Bool { kind == .note && includeInLayout == false }
@@ -68,9 +70,13 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
 
     public func validate() throws {
         try colourProfile?.validate()
-        if kind == .image {
+        if isVisualPrint {
             guard !assetFile.isEmpty, assetFile == URL(fileURLWithPath: assetFile).lastPathComponent,
                   !assetFile.hasPrefix("."), assetFile.hasSuffix(".png"), PrintStyle.imageStyles.contains(style) else { throw CorkError("Invalid image filename or image style.") }
+            if kind == .video {
+                guard let video else { throw CorkError("A video print needs its local video and still cover.") }
+                try video.validate()
+            }
         } else if kind == .note {
             guard assetFile.isEmpty, PrintStyle.noteStyles.contains(style), text.count <= 20_000 else { throw CorkError("Notes need a flat/sticky style and at most 20,000 characters.") }
         } else {
@@ -78,6 +84,7 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
             if let widgetState { guard widgetState.object != nil, try widgetState.data().count <= 64_000 else { throw CorkError("Widget state must be an object under 64 KB.") } }
         }
         guard kind == .widget || (widget == nil && widgetState == nil) else { throw CorkError("Only widgets can have widget state.") }
+        guard kind == .video || video == nil else { throw CorkError("Only video prints can have a video attachment.") }
         guard title.count <= 300, (sourceURL?.count ?? 0) <= 8192 else { throw CorkError("Title or source URL is too long.") }
         guard includeInLayout == nil || kind == .note else { throw CorkError("Only notes have an include-in-layout choice.") }
         guard matchSceneColours == nil || kind == .note else { throw CorkError("Only notes can match scene colours.") }
@@ -103,7 +110,7 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
         if let value = patch["style"] {
             guard let name = value.string, let style = PrintStyle(rawValue: name) else { throw CorkError("Unknown print style.") }
             self.style = style
-            if patch["height"] == nil, kind == .image { height = style.printSize(imageWidth: imageWidth, imageHeight: imageHeight, width: width).1 }
+            if patch["height"] == nil, isVisualPrint { height = style.printSize(imageWidth: imageWidth, imageHeight: imageHeight, width: width).1 }
         }
         if let value = patch["title"] {
             guard let text = value.string else { throw CorkError("title must be a string.") }; title = text
@@ -115,7 +122,7 @@ public struct PrintItem: Codable, Equatable, Identifiable, Sendable {
             guard kind == .note, let raw = value.string, let color = NoteColor(rawValue: raw) else { throw CorkError("Unknown note color.") }; noteColor = color
         }
         if let value = patch["keep_in_place"] {
-            guard kind == .image, let enabled = value.bool else { throw CorkError("keep_in_place applies to image prints.") }; keepInPlace = enabled
+            guard isVisualPrint, let enabled = value.bool else { throw CorkError("keep_in_place applies to image and video prints.") }; keepInPlace = enabled
         }
         if let value = patch["include_in_layout"] {
             guard kind == .note, let enabled = value.bool else { throw CorkError("include_in_layout must be a Boolean for a text note.") }; includeInLayout = enabled
@@ -220,7 +227,7 @@ public enum LayoutKind: String, CaseIterable, Sendable {
 
 public enum BoardLayout {
     public static func reflow(_ board: Board, display: DisplayInfo) throws -> Board {
-        let moving = board.items.filter { $0.kind == .image && !$0.isKept && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }.map(\.id)
+        let moving = board.items.filter { $0.isVisualPrint && !$0.isKept && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }.map(\.id)
         return moving.isEmpty ? board : try GreedyPacking.arrange(board, ids: moving, display: display, gap: 16, preserveAngles: true)
     }
     /// Hold coordinate edits as anchors and reflow the same photos around them.
@@ -243,7 +250,7 @@ public enum BoardLayout {
         for display in displays where affected.contains(display.id) {
             try Task.checkCancellation()
             let moving = next.items.filter {
-                $0.kind == .image && !$0.isKept && !$0.isHidden && !anchors.contains($0.id) && displayID($0) == display.id
+                $0.isVisualPrint && !$0.isKept && !$0.isHidden && !anchors.contains($0.id) && displayID($0) == display.id
             }.map(\.id)
             if !moving.isEmpty { next = try GreedyPacking.arrange(next, ids: moving, display: display, gap: 16, preserveAngles: true) }
         }

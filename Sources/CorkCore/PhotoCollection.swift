@@ -23,13 +23,18 @@ public struct CollectionPhoto: Codable, Equatable, Sendable, Identifiable {
     public var imageWidth: Double
     public var imageHeight: Double
     public var colourProfile: ImageColourProfile?
+    public var video: VideoAttachment?
+    public var colourCandidate: ColourCandidate? {
+        colourProfile.map { ColourCandidate(still: $0, motion: video?.colourSamples ?? []) }
+    }
     public init(id: String, assetFile: String, title: String, description: String, sourceURL: String, sourceBoard: String,
-                tags: [String], palette: [String], themeIDs: [String], imageWidth: Double, imageHeight: Double, colourProfile: ImageColourProfile? = nil, sourceBoardID: String? = nil) {
+                tags: [String], palette: [String], themeIDs: [String], imageWidth: Double, imageHeight: Double, colourProfile: ImageColourProfile? = nil, sourceBoardID: String? = nil, video: VideoAttachment? = nil) {
         self.id = id; self.assetFile = assetFile; self.title = title; self.description = description
         self.sourceURL = sourceURL; self.sourceBoard = sourceBoard; self.tags = tags; self.palette = palette; self.themeIDs = themeIDs
         self.imageWidth = imageWidth; self.imageHeight = imageHeight
         self.colourProfile = colourProfile
         self.sourceBoardID = sourceBoardID
+        self.video = video
     }
 }
 
@@ -55,7 +60,9 @@ public struct PhotoCollection: Codable, Equatable, Sendable {
                   !photo.themeIDs.isEmpty, Set(photo.themeIDs).isSubset(of: themeIDs),
                   (1...8).contains(photo.palette.count), photo.palette.allSatisfy({ $0.count == 7 && $0.first == "#" && $0.dropFirst().allSatisfy(\.isHexDigit) }),
                   let source = URL(string: photo.sourceURL), source.scheme == "https", source.host != nil else { throw CorkError("Invalid source, palette, tags, or theme metadata for \(photo.id).") }
-            try PrintItem(assetFile: photo.assetFile, title: photo.title, imageWidth: photo.imageWidth, imageHeight: photo.imageHeight).validate()
+            var print = PrintItem(assetFile: photo.assetFile, title: photo.title, imageWidth: photo.imageWidth, imageHeight: photo.imageHeight,
+                kind: photo.video == nil ? .image : .video)
+            print.video = photo.video; try print.validate()
             try photo.colourProfile?.validate()
         }
     }
@@ -65,6 +72,8 @@ public struct CollectionImport: Codable, Sendable {
     public var schemaVersion: Int
     public var themes: [CollectionTheme]
     public var photos: [CollectionImportPhoto]
+    /// Explicitly exclude selected catalogue entries from future rolls; owned media stays intact.
+    public var removeIDs: [String]? = nil
 }
 
 public struct CollectionImportPhoto: Codable, Sendable {
@@ -75,12 +84,13 @@ public struct CollectionImportPhoto: Codable, Sendable {
     public var sourceURL: String
     public var sourceBoard: String
     public var sourceBoardID: String?
+    public var kind: ItemKind?
     public var tags: [String]
     public var palette: [String]
     public var themeIDs: [String]
     public func saved(asset: ImportedAsset) -> CollectionPhoto {
         CollectionPhoto(id: id, assetFile: asset.file, title: title, description: description, sourceURL: sourceURL,
-                        sourceBoard: sourceBoard, tags: tags, palette: palette, themeIDs: themeIDs, imageWidth: asset.width, imageHeight: asset.height, colourProfile: asset.colourProfile, sourceBoardID: sourceBoardID)
+                        sourceBoard: sourceBoard, tags: tags, palette: asset.video == nil ? palette : asset.colours ?? palette, themeIDs: themeIDs, imageWidth: asset.width, imageHeight: asset.height, colourProfile: asset.colourProfile, sourceBoardID: sourceBoardID, video: asset.video)
     }
 }
 
@@ -129,8 +139,8 @@ public enum WallRotation {
         let options = board.desktop.sceneOptions, matchColours = colourAware ?? options.matchColours
         try options.validate()
         let colourChoices = matchColours && paletteID == nil ? options.colourPair : nil
-        let retained = board.items.filter { fillEmpty || $0.kind != .image || $0.isHidden || $0.isKept || ($0.displayID != display.id && $0.displayID != 0) }
-        let anchors = retained.filter { $0.kind == .image && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
+        let retained = board.items.filter { fillEmpty || !$0.isVisualPrint || $0.isHidden || $0.isKept || ($0.displayID != display.id && $0.displayID != 0) }
+        let anchors = retained.filter { $0.isVisualPrint && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
         func metadata(_ item: PrintItem) -> CollectionPhoto? {
             collection.photos.first { $0.assetFile == item.assetFile || (item.sourceURL != nil && $0.sourceURL == item.sourceURL) }
         }
@@ -140,8 +150,11 @@ public enum WallRotation {
         let customFamilies: [ColourFamily]?
         if let colourChoices {
             let available = collection.photos.filter { !retainedAssets.contains($0.assetFile) && !retainedSources.contains($0.sourceURL) }
-            let profiles = available.compactMap(\.colourProfile) + anchors.compactMap { $0.colourProfile ?? metadata($0)?.colourProfile }
-            customFamilies = try ColourPairSelection.resolve(colourChoices, profiles: profiles, strength: options.selectedStrength,
+            let candidates = available.compactMap(\.colourCandidate) + anchors.compactMap { item -> ColourCandidate? in
+                guard let profile = item.colourProfile ?? metadata(item)?.colourProfile else { return nil }
+                return ColourCandidate(still: profile, motion: (item.video ?? metadata(item)?.video)?.colourSamples ?? [])
+            }
+            customFamilies = try ColourPairSelection.resolve(colourChoices, candidates: candidates, strength: options.selectedStrength,
                 previous: board.rotation?.scheme?.colourFamilies, fillEmpty: fillEmpty, wallpapers: wallpapers,
                 matchWallpaper: options.matchWallpaper, display: display, random: &random)
         } else { customFamilies = nil }
@@ -164,7 +177,8 @@ public enum WallRotation {
         var wallpaper = options.matchWallpaper ? wallpapers.choose(scheme: scheme, mood: theme.id, display: display,
                                                                    previous: board.rotation?.wallpaperID, random: &random) : nil
         let free = try GreedyPacking.spaces(display: display, obstacles: retained, gap: 16, hideWidgets: board.desktop.widgetsHidden)
-        let raw = collection.photos.filter { (customFamilies != nil || $0.themeIDs.contains(theme.id)) && !retainedAssets.contains($0.assetFile) && !retainedSources.contains($0.sourceURL) }
+        let raw = collection.photos.filter { (customFamilies != nil || $0.themeIDs.contains(theme.id)) && !retainedAssets.contains($0.assetFile) && !retainedSources.contains($0.sourceURL) &&
+            (!matchColours || ($0.video?.matches(scheme: scheme) ?? true)) }
         let matches = raw.filter { ColourMatch.score($0.palette, against: scheme.colours) >= 0.50 }
         let neededBoards = min(4, Set(raw.map(\.sourceIdentity)).count)
         let paired = matchColours && scheme.majorColours != nil
@@ -172,7 +186,8 @@ public enum WallRotation {
         var pool = matchColours && matches.count >= min(8, raw.count) && Set(matches.map(\.sourceIdentity)).count >= neededBoards ? matches : raw
         if let customFamilies {
             guard raw.allSatisfy({ $0.colourProfile != nil }) else { throw CorkError("Cork is still classifying the collection's colours. Try again when analysis finishes.") }
-            pool = raw.filter { $0.colourProfile?.matches(customFamilies, strength: options.selectedStrength) == true }
+            pool = raw.filter { $0.colourProfile?.matches(customFamilies, strength: options.selectedStrength) == true &&
+                ($0.video?.matches(customFamilies, strength: options.selectedStrength) ?? true) }
             let profiles = pool.compactMap(\.colourProfile) + anchors.compactMap { $0.colourProfile ?? metadata($0)?.colourProfile }
             guard customFamilies.allSatisfy({ family in profiles.contains { $0.coverage(family) >= options.selectedStrength.minimumCoverage } }) else {
                 throw CorkError("Not enough matching photos in both selected colours. Include accents or choose another combination.")
@@ -277,15 +292,16 @@ public enum WallRotation {
                 x: placement.x, y: placement.y, width: placement.width, height: placement.height,
                 rotation: placement.candidate.angle, displayID: display.id,
                 zIndex: (next.items.map(\.zIndex).max() ?? -1) + 1, sourceURL: photo.sourceURL,
-                imageWidth: photo.imageWidth, imageHeight: photo.imageHeight)
+                imageWidth: photo.imageWidth, imageHeight: photo.imageHeight, kind: photo.video == nil ? .image : .video)
+            item.video = photo.video
             item.colours = photo.palette; item.colourProfile = photo.colourProfile; next.items.append(item)
         }
         if options.matchWallpaper {
-            let visiblePalettes = next.items.filter { $0.kind == .image && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
+            let visiblePalettes = next.items.filter { $0.isVisualPrint && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
                 .compactMap { $0.colours ?? metadata($0)?.palette }
             wallpaper = wallpapers.choose(scheme: scheme, mood: theme.id, display: display,
                 previous: board.rotation?.wallpaperID, imagePalettes: visiblePalettes,
-                imageProfiles: next.items.filter { $0.kind == .image && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
+                imageProfiles: next.items.filter { $0.isVisualPrint && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
                     .compactMap { $0.colourProfile ?? metadata($0)?.colourProfile }, random: &random)
         }
         if let wallpaper { next.desktop.wallpaper = wallpaper.settings }

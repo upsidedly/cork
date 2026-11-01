@@ -32,7 +32,7 @@ struct CustomColourSettings: View {
                     Text("Random changes on each roll; fixed colours stay in their selected slots. The dominant colour guides the wallpaper.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text("\(model.matchingColourPhotos().count) matching photos from your whole collection. Applies on the next roll.")
+                    Text("\(model.matchingColourPhotos().count) matching prints from your whole collection. Applies on the next roll.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.canRollWall { Text("Include accents or choose another pair to find more photos.").font(.caption).foregroundStyle(.secondary) }

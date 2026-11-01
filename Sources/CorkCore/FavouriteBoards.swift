@@ -43,8 +43,11 @@ public struct FavouriteBoards: Codable, Equatable, Sendable {
 
 extension BoardRepository {
     public func validateFavouriteMedia(_ favourite: FavouriteBoard) throws {
-        for item in favourite.items where item.kind == .image {
+        for item in favourite.items where item.isVisualPrint {
             guard FileManager.default.fileExists(atPath: assets.appendingPathComponent(item.assetFile).path) else { throw CorkError("This favourite references a missing image. The current wall was preserved.") }
+            if let video = item.video {
+                guard FileManager.default.fileExists(atPath: assets.appendingPathComponent(video.file).path) else { throw CorkError("This favourite references a missing video. The current wall was preserved.") }
+            }
         }
         for file in [favourite.wallpaper.assetFile, favourite.wallpaper.posterFile].compactMap({ $0 }) {
             guard FileManager.default.fileExists(atPath: wallpapers.appendingPathComponent(file).path) else { throw CorkError("This favourite's wallpaper is missing. The current wall was preserved.") }

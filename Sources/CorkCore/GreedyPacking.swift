@@ -189,7 +189,7 @@ enum GreedyPacking {
         let selected = ids.map(Set.init)
         let indices = board.items.indices.filter {
             let item = board.items[$0]
-            return item.kind == .image && !item.isKept && !item.isHidden && (selected?.contains(item.id) ?? (item.displayID == display.id || item.displayID == 0))
+            return item.isVisualPrint && !item.isKept && !item.isHidden && (selected?.contains(item.id) ?? (item.displayID == display.id || item.displayID == 0))
         }
         guard !indices.isEmpty else { return board }
         let moving = Set(indices)

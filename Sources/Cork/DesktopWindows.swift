@@ -27,7 +27,7 @@ final class DesktopWindows {
     func refresh(board: Board, editing: Bool, selection: UUID?, baseLevel: NSWindow.Level) {
         let live = Set(board.items.filter { !$0.isHidden }.map(\.id))
         for id in Array(panels.keys) where !live.contains(id) {
-            if let panel = panels.removeValue(forKey: id) { (panel.contentView as? WidgetPaperView)?.stop(); panel.close() }
+            if let panel = panels.removeValue(forKey: id) { (panel.contentView as? WidgetPaperView)?.stop(); (panel.contentView as? VideoPrintView)?.stop(); panel.close() }
         }
         let files = Set(board.items.map(\.assetFile)); images = images.filter { files.contains($0.key) }
         for item in board.itemsBackToFront {
@@ -40,13 +40,17 @@ final class DesktopWindows {
                 panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
                 panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
                 panel.title = "Cork — \(item.title)"; panel.identifier = NSUserInterfaceItemIdentifier("cork-print-\(item.id)")
-                if item.kind == .image, images[item.assetFile] == nil { images[item.assetFile] = NSImage(contentsOf: assets.appendingPathComponent(item.assetFile)) }
+                if item.isVisualPrint, images[item.assetFile] == nil { images[item.assetFile] = NSImage(contentsOf: assets.appendingPathComponent(item.assetFile)) }
                 let content: NSView
                 let view: PrintView
                 if item.kind == .widget {
                     let widget = WidgetPaperView(item: item, registry: controller?.widgets ?? WidgetRegistry(), root: CorkPaths.dataDirectory)
                     widget.surface?.onState = { [weak self] state in self?.controller?.persistWidgetState(item.id, state: state) }
                     content = widget; view = widget.editor
+                } else if let video = item.video {
+                    let printView = VideoPrintView(item: item, image: images[item.assetFile], videoURL: assets.appendingPathComponent(video.file))
+                    printView.onFailure = { [weak self] message in self?.controller?.errorMessage = message }
+                    content = printView; view = printView
                 } else { let printView = PrintView(item: item, image: images[item.assetFile]); content = printView; view = printView }
                 view.onSelect = { [weak self] in self?.controller?.select(item.id) }
                 view.onChange = { [weak self] patch, revision in self?.controller?.updateFromUI(patch, revision: revision) }
@@ -58,8 +62,9 @@ final class DesktopWindows {
             panel.editing = editing
             let view = (panel.contentView as? PrintView) ?? (panel.contentView as? WidgetPaperView)?.editor
             view?.editing = editing
-            panel.interactive = item.kind == .widget
-            panel.ignoresMouseEvents = !editing && item.kind != .widget
+            panel.interactive = item.kind == .widget || item.kind == .video
+            panel.acceptsMouseMovedEvents = item.kind == .video
+            panel.ignoresMouseEvents = !editing && !panel.interactive
             panel.level = editing ? .floating : baseLevel
             let angle = item.rotation * .pi / 180
             let padding = item.kind == .widget ? 0.0 : 96.0
@@ -80,10 +85,13 @@ final class DesktopWindows {
             }
             (panel.contentView as? WidgetPaperView)?.surface?.updateState(item.widgetState ?? .object([:]))
             (panel.contentView as? WidgetPaperView)?.surface?.setPaused(widgetsPaused || board.hidden)
+            if let video = panel.contentView as? VideoPrintView {
+                video.playbackPaused = widgetsPaused || board.hidden; video.syncPlayback()
+            }
             if board.hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
         }
     }
-    func close() { for panel in panels.values { (panel.contentView as? WidgetPaperView)?.stop(); panel.close() }; panels.removeAll() }
+    func close() { for panel in panels.values { (panel.contentView as? WidgetPaperView)?.stop(); (panel.contentView as? VideoPrintView)?.stop(); panel.close() }; panels.removeAll() }
     func select(_ selection: UUID?) {
         // Selection changes must not reorder windows or reset an in-progress drag.
         for (id, panel) in panels {
@@ -92,16 +100,32 @@ final class DesktopWindows {
             }
         }
     }
-    func pauseWidgets(_ paused: Bool) { widgetsPaused = paused; for panel in panels.values { (panel.contentView as? WidgetPaperView)?.surface?.setPaused(paused) } }
+    func pauseWidgets(_ paused: Bool) {
+        widgetsPaused = paused
+        for panel in panels.values {
+            (panel.contentView as? WidgetPaperView)?.surface?.setPaused(paused)
+            (panel.contentView as? VideoPrintView)?.playbackPaused = paused
+        }
+    }
     func reloadWidgets() {
         for id in Array(panels.keys) where panels[id]?.contentView is WidgetPaperView {
             if let panel = panels.removeValue(forKey: id) { (panel.contentView as? WidgetPaperView)?.stop(); panel.close() }
         }
     }
+    func motionPreferenceChanged() {
+        for panel in panels.values { (panel.contentView as? VideoPrintView)?.motionPreferenceChanged() }
+    }
     func image(for item: PrintItem) -> NSImage? {
-        guard item.kind == .image else { return nil }
+        guard item.isVisualPrint else { return nil }
         if images[item.assetFile] == nil { images[item.assetFile] = NSImage(contentsOf: assets.appendingPathComponent(item.assetFile)) }
         return images[item.assetFile]
     }
     var windowNumbers: Set<Int> { Set(panels.values.map(\.windowNumber)) }
+    var videoDescription: JSONValue {
+        .array(panels.compactMap { id, panel in
+            guard let video = panel.contentView as? VideoPrintView else { return nil }
+            return .object(["id": .string(id.uuidString), "playing": .bool(video.isPlaying), "muted": .bool(video.playbackMuted), "ready_for_display": .bool(video.readyForDisplay),
+                            "decoder_loaded": .bool(video.hasPlayer), "time": .number(video.playbackTime), "failed": .bool(video.failed)])
+        })
+    }
 }

@@ -8,7 +8,7 @@ public enum NoteColours {
             guard note.kind == .note, note.matchSceneColours == true,
                   displayID == nil || note.displayID == displayID || note.displayID == 0 else { continue }
             let palettes = next.items.filter {
-                $0.kind == .image && !$0.isHidden && ($0.displayID == note.displayID || $0.displayID == 0 || note.displayID == 0)
+                $0.isVisualPrint && !$0.isHidden && ($0.displayID == note.displayID || $0.displayID == 0 || note.displayID == 0)
             }.compactMap(\.colours)
             let candidates = palettes.flatMap { Array($0.prefix(3)) } + (next.rotation?.scheme?.colours ?? [])
             let base = candidates.first { ColourMatch.wallpaperHueAffinity([$0], imagePalettes: palettes) > 0.7 }

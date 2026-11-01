@@ -131,7 +131,7 @@ private func image(_ title: String = "Print") -> PrintItem {
     let initRequest: JSONValue = .object(["jsonrpc": .string("2.0"), "id": .number(2), "method": .string("initialize"), "params": .object(["protocolVersion": .string("2025-11-25")])])
     try expect(dispatcher.respond(initRequest, call: call)?["result"]?["serverInfo"]?["name"] == .string("Cork"))
     try expect(dispatcher.respond(.object(["jsonrpc": .string("2.0"), "method": .string("notifications/initialized")]), call: call) == nil)
-    try expect(dispatcher.respond(list, call: call)?["result"]?["tools"]?.array?.count == 27)
+    try expect(dispatcher.respond(list, call: call)?["result"]?["tools"]?.array?.count == 28)
     let request: JSONValue = .object(["jsonrpc": .string("2.0"), "id": .number(3), "method": .string("tools/call"), "params": .object(["name": .string("cork_get_board")])])
     try expect(dispatcher.respond(request, call: call)?["result"]?["isError"] == .bool(true))
 }

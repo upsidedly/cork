@@ -57,7 +57,7 @@ final class CorkController {
     func displayTitle(for item: PrintItem) -> String {
         if !item.title.isEmpty { return item.title }
         if let reference = item.widget { return widgets.definition(reference)?.name ?? "Widget" }
-        return collectionPhoto(for: item)?.title ?? (item.kind == .note ? "Untitled note" : "Untitled image")
+        return collectionPhoto(for: item)?.title ?? (item.kind == .note ? "Untitled note" : item.kind == .video ? "Untitled video" : "Untitled image")
     }
     var displays: [DisplayInfo] { DesktopWindows.displays }
 
@@ -136,8 +136,8 @@ final class CorkController {
         let options = board.desktop.sceneOptions
         guard let choices = options.colourPair else { return [] }
         let pairs = options.fixedColourPair.map { [$0] } ?? ColourPairSelection.availablePairs(choices: choices,
-            profiles: collection.photos.compactMap(\.colourProfile), strength: options.selectedStrength)
-        return collection.photos.filter { photo in pairs.contains { photo.colourProfile?.matches($0, strength: options.selectedStrength) == true } }
+            candidates: collection.photos.compactMap(\.colourCandidate), strength: options.selectedStrength)
+        return collection.photos.filter { photo in pairs.contains { photo.colourCandidate?.matches($0, strength: options.selectedStrength) == true } }
     }
     var resolvedColourPair: [ColourFamily]? {
         guard let choices = board.desktop.sceneOptions.colourPair, let pair = board.rotation?.scheme?.colourFamilies,
@@ -380,28 +380,31 @@ final class CorkController {
 
     func importImages(_ urls: [URL]) async throws {
         guard let display = displays.first else { throw CorkError("No display is available.") }
-        try await transact {
+        var imported: [ImportedAsset] = []
+        do { try await transact {
             guard board.items.count + urls.count <= 500 else { throw CorkError("A board can hold up to 500 prints.") }
             var next = board
             for (offset, url) in urls.enumerated() {
-                let asset = try await repository.importImage(at: url.path)
+                let asset = try await repository.importMedia(at: url.path)
+                imported.append(asset)
                 let width = min(280, display.safeWidth * 0.4)
                 let size = defaultStyle.printSize(imageWidth: asset.width, imageHeight: asset.height, width: width)
                 let displacement = Double((next.items.count + offset) % 8) * 25
-                var item = PrintItem(assetFile: asset.file, title: asset.title, style: defaultStyle,
+                var item = PrintItem(assetFile: asset.file, title: asset.video == nil ? asset.title : "", style: defaultStyle,
                     x: display.safeX + 40 + displacement, y: display.safeY + 35 + displacement,
                     width: size.0, height: size.1, displayID: display.id,
-                    zIndex: (next.items.map(\.zIndex).max() ?? -1) + 1, imageWidth: asset.width, imageHeight: asset.height)
-                item.colourProfile = asset.colourProfile; next.items.append(item)
+                    zIndex: (next.items.map(\.zIndex).max() ?? -1) + 1, imageWidth: asset.width, imageHeight: asset.height, kind: asset.video == nil ? .image : .video)
+                item.video = asset.video; item.colours = asset.colours; item.colourProfile = asset.colourProfile; next.items.append(item)
             }
             return next
         }
+        } catch { await repository.discardUnreferencedImports(imported); throw error }
         selection = board.items.last?.id; refresh()
     }
 
     func addImages() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false; panel.prompt = "Add to Wall"; panel.message = "Cork keeps its own copy of each image."
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image, .movie]; panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false; panel.prompt = "Add to Wall"; panel.message = "Cork keeps a local copy. Videos stay still until you hover and play without sound."
         panel.begin { [weak self] response in
             guard response == .OK, let self else { return }
             self.run { try await self.importImages(panel.urls) }
@@ -412,7 +415,7 @@ final class CorkController {
         guard ready, !busy else { return false }
         if let choices = board.desktop.sceneOptions.colourPair, board.desktop.sceneOptions.matchColours {
             guard !classifyingColours else { return false }
-            return !ColourPairSelection.availablePairs(choices: choices, profiles: collection.photos.compactMap(\.colourProfile),
+            return !ColourPairSelection.availablePairs(choices: choices, candidates: collection.photos.compactMap(\.colourCandidate),
                 strength: board.desktop.sceneOptions.selectedStrength, maximum: 1).isEmpty
         }
         return !collection.eligibleThemes.isEmpty
@@ -448,14 +451,14 @@ final class CorkController {
             var board = self.board
             let collection = self.collection, wallpapers = self.wallpapers
             if colourAware ?? board.desktop.sceneOptions.matchColours {
-                for index in board.items.indices where board.items[index].kind == .image && (fillEmpty || board.items[index].isKept) && board.items[index].colours == nil {
+                for index in board.items.indices where board.items[index].isVisualPrint && (fillEmpty || board.items[index].isKept) && board.items[index].colours == nil {
                     let item = board.items[index]
                     if !collection.photos.contains(where: { $0.assetFile == item.assetFile || (item.sourceURL != nil && item.sourceURL == $0.sourceURL) }) {
                         board.items[index].colours = try await self.repository.imageColours(assetFile: item.assetFile)
                     }
                 }
                 if board.desktop.sceneOptions.colourPair != nil {
-                    for index in board.items.indices where board.items[index].kind == .image && (fillEmpty || board.items[index].isKept) && board.items[index].colourProfile == nil {
+                    for index in board.items.indices where board.items[index].isVisualPrint && (fillEmpty || board.items[index].isKept) && board.items[index].colourProfile == nil {
                         let item = board.items[index]
                         if self.collectionPhoto(for: item)?.colourProfile == nil { board.items[index].colourProfile = try await self.repository.imageColourProfile(assetFile: item.assetFile) }
                     }
@@ -502,6 +505,7 @@ final class CorkController {
         }
         var value: [String: JSONValue] = [
             "photo_count": .number(Double(collection.photos.count)),
+            "video_count": .number(Double(collection.photos.filter { $0.video != nil }.count)),
             "capacity": .number(Double(PhotoCollection.maximumPhotos)),
             "matched_ids": .array(selected.dropFirst(offset).prefix(limit).map { .string($0.id) }),
             "offset": .number(Double(offset)), "has_more": .bool(offset < selected.count && selected.count - offset > limit),
@@ -690,6 +694,7 @@ final class CorkController {
         result["collection"] = try collectionDescription()
         result["wallpaper_collection"] = try wallpaperDescription(includeMetadata: false)
         result["widget_provider_count"] = .number(Double(widgets.providers.count))
+        result["video_prints"] = desktop.videoDescription
         result["desktop_runtime"] = .object([
             "icons_hidden": .bool(environment.iconsCovered), "loading_wallpaper": .bool(environment.loading),
             "widgets_hidden": .bool(environment.widgetsCovered), "detected_widgets": .number(Double(environment.detectedWidgets)),
@@ -772,24 +777,28 @@ final class CorkController {
                 let target = try resolveDisplay(args)
                 try await rollWall(themeID: args["theme"]?.string, seed: seed, displayID: target.id, expectedRevision: revision,
                     fillEmpty: name == "cork_fill_empty", paletteID: args["palette"]?.string, colourAware: args["colour_aware"]?.bool)
-            case "cork_add_image":
+            case "cork_add_image", "cork_add_video":
                 let path = try args.requiredString("path")
                 guard let style = PrintStyle(rawValue: args["style"]?.string ?? defaultStyle.rawValue), PrintStyle.imageStyles.contains(style) else { throw CorkError("Unknown image style.") }
                 let display = try resolveDisplay(args)
                 let width = try args.optionalNumber("width", fallback: 280)
                 guard (64...4000).contains(width) else { throw CorkError("width must be 64…4000 points.") }
-                try await transact {
+                var imported: [ImportedAsset] = []
+                do { try await transact {
                     guard self.board.items.count < 500 else { throw CorkError("This board already has 500 prints.") }
-                    let asset = try await self.repository.importImage(at: path)
+                    let asset = name == "cork_add_video" ? try await self.repository.importVideo(at: path) : try await self.repository.importImage(at: path)
+                    imported.append(asset)
                     let size = style.printSize(imageWidth: asset.width, imageHeight: asset.height, width: width)
-                    var item = PrintItem(assetFile: asset.file, title: args["title"]?.string ?? asset.title, style: style,
+                    var item = PrintItem(assetFile: asset.file, title: args["title"]?.string ?? (asset.video == nil ? asset.title : ""), style: style,
                         x: try args.optionalNumber("x", fallback: display.safeX + 40), y: try args.optionalNumber("y", fallback: display.safeY + 40),
                         width: size.0, height: size.1, rotation: try args.optionalNumber("rotation", fallback: 0), displayID: display.id,
                         zIndex: (self.board.items.map(\.zIndex).max() ?? -1) + 1, sourceURL: args["source_url"]?.string,
-                        imageWidth: asset.width, imageHeight: asset.height)
+                        imageWidth: asset.width, imageHeight: asset.height, kind: asset.video == nil ? .image : .video)
+                    item.video = asset.video; item.colours = asset.colours
                     item.colourProfile = asset.colourProfile
                     try item.validate(); var next = self.board; next.items.append(item); return next
                 }
+                } catch { await repository.discardUnreferencedImports(imported); throw error }
             case "cork_update_items":
                 guard let entries = args["items"]?.array else { throw CorkError("items must be an array.") }
                 let patches = try entries.map { value -> [String: JSONValue] in guard let patch = value.object else { throw CorkError("Each update must be an object.") }; return patch }

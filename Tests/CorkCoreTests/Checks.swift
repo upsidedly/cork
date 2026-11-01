@@ -24,6 +24,11 @@ func expectThrows<T>(_ body: () throws -> T) throws {
 @main enum CorkChecks {
     @MainActor static func main() async {
         let cases: [(String, @MainActor () async throws -> Void)] = [
+            ("Video models migrate, validate and restore favourites", videosMigrateValidateAndPersistWithFavourites),
+            ("Video import owns covers and measures multiple frames", videoImportOwnsCoverAndMeasuresSpreadOutFrames),
+            ("Video collection imports roll back and reuse media", videoCollectionImportsAreAtomicAndReuseOwnedMedia),
+            ("Video layouts preserve colours, anchors and visibility", videoLayoutsRespectColoursAnchorsVisibilityAndDisplayChanges),
+            ("Random pairs reject incompatible video motion", randomPairsRejectVideosWhoseMotionNeedsAnotherColour),
             ("Random colour choices migrate and persist", randomColourChoicesMigrateAndPersist),
             ("Random colour slots keep their fixed roles", randomColourSlotsPreserveFixedRoles),
             ("Dominant colour leads images and wallpaper", dominantColourControlsImageAreaAndWallpaper),

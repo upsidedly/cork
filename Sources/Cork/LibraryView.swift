@@ -23,10 +23,10 @@ struct CorkLibraryView: View {
                 VStack(spacing: 14) {
                     Image(systemName: "pin.square").font(.system(size: 42, weight: .ultraLight)).foregroundStyle(.secondary)
                     Text("Add something to your wall").font(.title3.weight(.medium))
-                    Text("Images and notes, right on your wallpaper.").foregroundStyle(.secondary)
+                    Text("Images, videos and notes, right on your wallpaper.").foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Button("Import from Pinterest…") { model.run { try await model.launchImporter() } }
-                        Button("Add Images…", systemImage: "photo.badge.plus") { model.addImages() }
+                        Button("Add Images or Videos…", systemImage: "photo.badge.plus") { model.addImages() }
                         Button("New Note", systemImage: "square.and.pencil") { model.addNote() }
                     }.padding(.top, 4)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,7 +41,7 @@ struct CorkLibraryView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(model.displayTitle(for: item))
                                         .lineLimit(1)
-                                    Text((item.kind == .widget ? "Widget" : item.kind == .note ? "\(item.style.title) note" : item.style.title) + (item.isHidden ? " · Hidden" : ""))
+                                    Text((item.kind == .widget ? "Widget" : item.kind == .note ? "\(item.style.title) note" : (item.kind == .video ? "\(item.style.title) video" : item.style.title)) + (item.isHidden ? " · Hidden" : ""))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
@@ -86,7 +86,7 @@ struct CorkLibraryView: View {
             ToolbarItemGroup {
                 Button("Import from Pinterest", systemImage: "square.and.arrow.down") { model.run { try await model.launchImporter() } }
                     .help("Choose Pinterest boards and review images before adding them")
-                Button("Add Images", systemImage: "photo.badge.plus") { model.addImages() }.help("Add Images (⌘O)")
+                Button("Add Images or Videos", systemImage: "photo.badge.plus") { model.addImages() }.help("Add Images or Videos (⌘O)")
                 Button("New Note", systemImage: "square.and.pencil") { model.addNote() }.help("New Note (⌘N)")
                 Button("Fill Empty", systemImage: "rectangle.badge.plus") { model.run { try await model.rollWall(fillEmpty: true) } }
                     .help("Keep existing prints and fill the gaps with matching images").disabled(!model.canRollWall)
@@ -162,7 +162,7 @@ struct ItemInspector: View {
                     }
                 }.pickerStyle(.segmented)
                 }
-                if item.kind == .image {
+                if item.isVisualPrint {
                     Toggle("Keep in place", isOn: Binding(get: { item.isKept }, set: { update(["keep_in_place": .bool($0)]) }))
                         .help("Randomize and automatic layouts leave this print in place. You can still move it manually.")
                 } else if item.kind == .note {
@@ -175,7 +175,7 @@ struct ItemInspector: View {
                 }
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(item.kind == .image ? "Title / caption" : "Title").font(.caption).foregroundStyle(.secondary)
+                    Text(item.isVisualPrint ? "Title / caption" : "Title").font(.caption).foregroundStyle(.secondary)
                     TextField("Optional title", text: $titleDraft)
                         .textFieldStyle(.roundedBorder).focused($titleFocused)
                         .onSubmit { update(["title": .string(titleDraft)]) }

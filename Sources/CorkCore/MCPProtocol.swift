@@ -77,17 +77,17 @@ public enum CorkTools {
                 "ids": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "maxItems": .number(200)]),
                 "source_urls": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "maxItems": .number(200)])
             ]), true, false),
-            ("cork_import_collection", "Import a selected local JSON collection manifest and copy its images. Merges by stable photo ID without changing the wall. Manifest schemaVersion 1: themes [{id,name,description}], photos [{id,path,title,description,sourceURL,sourceBoard,tags,palette,themeIDs}]. Use verified Pinterest download paths and original pin URLs. Import in batches of about 20 photos; inspect the collection after an ambiguous response before resuming.", schema([
-                "path": property("string", "Absolute local manifest JSON path, up to 5 MB, 1–200 photos per manifest.")
+            ("cork_import_collection", "Import a selected local JSON collection manifest and copy its images/videos. Merges by stable media ID without changing the wall. Manifest schemaVersion 1: themes [{id,name,description}], photos [{id,path,title,description,sourceURL,sourceBoard,tags,palette,themeIDs,kind?}]. kind may be image or video; omitted means image. Use verified local download paths and original source URLs. Videos create a still cover and measured frame profiles. Optional removeIDs excludes selected catalogue IDs from future rolls without deleting media or changing saved scenes. Import or exclude at most 200 IDs per manifest; use batches of about 20 new prints; inspect the collection after an ambiguous response before resuming.", schema([
+                "path": property("string", "Absolute local manifest JSON path, up to 5 MB and 1–200 import/exclusion IDs per manifest.")
             ], required: ["path"]), false, false),
-            ("cork_roll_wall", "Greedily fill a wall from the saved local photo collection. Uses one curated visual mood, balances both colour families for paired palettes, mixes at least three source boards when available with about a 40% per-board cap, and selects photo aspect ratios for rectangular gaps. Favors fresh photos, mixes print types, and leaves captions blank. Replaces images on one display; preserves notes, widgets and other displays. Atomic, saved, and undoable; no network request.", schema([
+            ("cork_roll_wall", "Greedily fill a wall from the saved local image/video collection. Uses one curated visual mood, balances both colour families for paired palettes, mixes at least three source boards when available with about a 40% per-board cap, and selects photo aspect ratios for rectangular gaps. Favors fresh photos, mixes print types, and leaves captions blank. Replaces image/video prints on one display; preserves notes, widgets and other displays. Atomic, saved, and undoable; no network request.", schema([
                 "theme": property("string", "Mood ID from cork_get_collection, or auto. Defaults to the saved mood choice."),
                 "palette": property("string", "Optional palette ID from cork_get_wallpapers."),
                 "colour_aware": property("boolean", "Override the saved colour matching preference for this roll."),
                 "seed": property("integer", "Optional reproducible seed, 0…2147483647."), "display_id": display,
                 "expected_revision": property("integer", "Optional current board revision.")
             ]), false, false),
-            ("cork_fill_empty", "Keep every existing print and note exactly where it is and add palette-matching photos in the free rectangles. Does not move or remove existing items. Saved, atomic and undoable; honours the widget checkbox. Uses the current mood where possible, derives the palette from existing images, and can choose a matching native-resolution wallpaper when enabled.", schema([
+            ("cork_fill_empty", "Keep every existing print and note exactly where it is and add palette-matching image/video prints in the free rectangles. Does not move or remove existing items. Saved, atomic and undoable; honours the widget checkbox. Uses the current mood where possible, derives the palette from existing images, and can choose a matching native-resolution wallpaper when enabled.", schema([
                 "theme": property("string", "Optional mood ID."), "palette": property("string", "Optional palette ID from cork_get_wallpapers."),
                 "colour_aware": property("boolean", "Override the saved image-colour matching preference for this fill."),
                 "seed": property("integer", "Reproducible seed, 0…2147483647."), "display_id": display,
@@ -102,6 +102,13 @@ public enum CorkTools {
                 "source_url": property("string", "Optional Pinterest pin/original source URL for attribution."), "style": choice(PrintStyle.imageStyles.map(\.rawValue), "Image treatment."),
                 "x": number("Left in display-local points."), "y": number("Top in display-local points."),
                 "width": number("Decorated print width, 64…4000 points."), "rotation": number("Clockwise degrees."), "display_id": display
+            ], required: ["path"]), false, false),
+            ("cork_add_video", "Copy a selected local MP4, MOV or M4V into Cork as a physical print. Static cover at rest; hover plays silently, leaving restores the cover. Measures cover colours and five spread-out frames for palette matching. Same treatments, geometry, layout, visibility, favourites and persistence as image prints. No URL download or account credentials.", schema([
+                "path": property("string", "Absolute local video path, under 200 MB and at most ten minutes."),
+                "title": property("string", "Optional title/caption; blank by default."), "source_url": property("string", "Original source URL for attribution."),
+                "style": choice(PrintStyle.imageStyles.map(\.rawValue), "Print treatment."),
+                "x": number("Left in display-local points."), "y": number("Top in display-local points."),
+                "width": number("Decorated width, 64…4000 points."), "rotation": number("Clockwise degrees."), "display_id": display
             ], required: ["path"]), false, false),
             ("cork_add_note", "Add a text note to the desktop, with flat paper or a shaded sticky note. Text remains editable and local. Arrange notes with the same tools as images.", schema([
                 "text": property("string", "Note body, at most 20,000 characters."), "title": property("string", "Optional note title."),
@@ -208,7 +215,7 @@ public struct MCPDispatcher: Sendable {
             return response(.object([
                 "protocolVersion": .string(versions.contains(requested) ? requested : versions[0]),
                 "capabilities": .object(["tools": .object(["listChanged": .bool(false)])]),
-                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.9.0")]),
+                "serverInfo": .object(["name": .string("Cork"), "version": .string("0.10.0")]),
                 "instructions": .string("Use cork_get_board, then add local images (Pinterest downloads come from the Pinterest plugin). Arrange with revision checks, inspect cork_screenshot_desktop, refine geometry, and undo mistakes. Coordinates: upper-left of each full display, points; image responses report pixel-to-point scale. Cork app owns all state.")
             ]))
         }

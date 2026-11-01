@@ -10,8 +10,11 @@ public struct ImportedAsset: Sendable {
     public let height: Double
     public let title: String
     public let colourProfile: ImageColourProfile?
-    public init(file: String, width: Double, height: Double, title: String, colourProfile: ImageColourProfile? = nil) {
+    public let colours: [String]?
+    public let video: VideoAttachment?
+    public init(file: String, width: Double, height: Double, title: String, colourProfile: ImageColourProfile? = nil, colours: [String]? = nil, video: VideoAttachment? = nil) {
         self.file = file; self.width = width; self.height = height; self.title = title; self.colourProfile = colourProfile
+        self.colours = colours; self.video = video
     }
 }
 

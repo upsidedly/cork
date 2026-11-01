@@ -28,20 +28,33 @@ public enum ColourChoice: RawRepresentable, Codable, CaseIterable, Hashable, Ide
     }
 }
 
+public struct ColourCandidate: Sendable {
+    public var still: ImageColourProfile
+    public var motion: [ImageColourProfile]
+    public init(still: ImageColourProfile, motion: [ImageColourProfile] = []) { self.still = still; self.motion = motion }
+    public func matches(_ pair: [ColourFamily], strength: ColourSelectionStrength) -> Bool {
+        still.matches(pair, strength: strength) && motion.allSatisfy { $0.matches(pair, strength: strength) }
+    }
+}
+
 public enum ColourPairSelection {
     /// Ordered pairs with enough classified images and a represented colour in
     /// each slot. `maximum: 1` supports a cheap availability check in the UI.
     public static func availablePairs(choices: [ColourChoice], profiles: [ImageColourProfile],
                                      strength: ColourSelectionStrength, maximum: Int = .max) -> [[ColourFamily]] {
+        availablePairs(choices: choices, candidates: profiles.map { ColourCandidate(still: $0) }, strength: strength, maximum: maximum)
+    }
+    public static func availablePairs(choices: [ColourChoice], candidates: [ColourCandidate],
+                                     strength: ColourSelectionStrength, maximum: Int = .max) -> [[ColourFamily]] {
         guard choices.count == 2, maximum > 0 else { return [] }
         let represented = ColourFamily.allCases.filter { family in
-            profiles.contains { $0.coverage(family) >= strength.minimumCoverage }
+            candidates.contains { $0.still.coverage(family) >= strength.minimumCoverage }
         }
         var result: [[ColourFamily]] = []
         for first in represented where choices[0].allows(first) {
             for second in represented where second != first && choices[1].allows(second) {
                 let pair = [first, second]
-                let matches = profiles.filter { $0.matches(pair, strength: strength) }
+                let matches = candidates.filter { $0.matches(pair, strength: strength) }.map(\.still)
                 if matches.count >= 6 && matches.contains(where: { $0.coverage(first) > $0.coverage(second) }) && pair.allSatisfy({ family in
                     matches.contains { $0.coverage(family) >= strength.minimumCoverage }
                 }) {
@@ -53,7 +66,7 @@ public enum ColourPairSelection {
         return result
     }
 
-    static func resolve(_ choices: [ColourChoice], profiles: [ImageColourProfile], strength: ColourSelectionStrength,
+    static func resolve(_ choices: [ColourChoice], candidates: [ColourCandidate], strength: ColourSelectionStrength,
                         previous: [ColourFamily]?, fillEmpty: Bool, wallpapers: WallpaperCollection,
                         matchWallpaper: Bool, display: DisplayInfo, random: inout WallRotation.Generator) throws -> [ColourFamily] {
         guard choices.count == 2 else { throw CorkError("Choose a dominant and secondary colour.") }
@@ -62,7 +75,7 @@ public enum ColourPairSelection {
         // Adding pictures or refitting a display must not silently change a scene's colours.
         if fillEmpty, let previous, previous.count == 2,
            zip(choices, previous).allSatisfy({ $0.0.allows($0.1) }) { return previous }
-        var pairs = availablePairs(choices: choices, profiles: profiles, strength: strength)
+        var pairs = availablePairs(choices: choices, candidates: candidates, strength: strength)
         if matchWallpaper && !wallpapers.wallpapers.isEmpty {
             let withBackground = pairs.filter { pair in
                 guard let scheme = try? ScenePalettes.pair(pair) else { return false }

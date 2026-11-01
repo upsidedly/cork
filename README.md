@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0--or--later-555555" alt="GNU AGPL version 3 or later"></a>
 </p>
 
-Cork puts posters, photos and notes on your desktop. Tape up a print, pin a photo, or leave a sticky beside it. Roll a new collage when you want a change. It shares a monochrome style with [Tuck](https://github.com/Upsidedly/tuck), [Snap](https://github.com/Upsidedly/snap) and [Cell](https://github.com/Upsidedly/cell).
+Cork puts posters, photos, video prints and notes on your desktop. Tape up a print, pin a photo, or leave a sticky beside it. Roll a new collage when you want a change. It shares a monochrome style with [Tuck](https://github.com/Upsidedly/tuck), [Snap](https://github.com/Upsidedly/snap) and [Cell](https://github.com/Upsidedly/cell).
 
 **[Download Cork for macOS](https://github.com/upsidedly/cork/releases/latest)** · Apple silicon and Intel · macOS 14+
 
@@ -23,7 +23,9 @@ Drag Cork into Applications. The Pinterest importer is included. This community 
 
 ## Put something on the wall
 
-Open Cork from the menu bar. Choose **Add Images…**, paste an image, or drop files into the library. Pick **Tape**, **Pushpin**, **Polaroid** or **Frame**. Cork keeps a local copy and preserves the image's proportions. Polaroid captions are optional and use marker lettering.
+Open Cork from the menu bar. Choose **Add Images or Videos…**, paste an image, or drop files into the library. Pick **Tape**, **Pushpin**, **Polaroid** or **Frame**. Cork keeps a local copy and preserves the image's proportions. Polaroid captions are optional and use marker lettering.
+
+Videos use the same paper treatments. They stay still until you hover, then loop silently. Move away and the cover returns. Click a video and press **Space** for keyboard playback; **Escape** stops it. Reduce Motion turns off hover playback while keeping this explicit control. MP4, MOV and M4V files up to 200 MB and ten minutes are supported. Cork measures five frames before including a video in a colour-matched collage.
 
 Choose **New Note** for editable text on **Flat** paper or a shaded **Sticky**. Check **Include in layout** to reserve its space, or untick it to float the note over your pictures. **Match collage colours** tints the paper to suit the visible photos.
 

@@ -26,7 +26,7 @@ struct SceneComposer: View {
                     else if activePair?.contains(.random) == true {
                         Text(model.resolvedColourPair.map { "Current: " + $0.map(\.name).joined(separator: " + ") } ?? "Random on the next roll")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    } else { Text("\(model.matchingColourPhotos().count) matching photos").font(.caption).foregroundStyle(.secondary) }
+                    } else { Text("\(model.matchingColourPhotos().count) matching prints").font(.caption).foregroundStyle(.secondary) }
                     Button("Automatic") { model.run { try await model.setDesktop(paletteID: "auto") } }
                         .help("Return to the saved mood and automatic palette")
                 } else {

@@ -21,7 +21,7 @@ public enum DisplayAdaptation {
                 fixedMoved = fixedMoved || item != next.items[index]; next.items[index] = item
             }
             let safe = try GreedyPacking.area(display)
-            let images = next.items.filter { $0.kind == .image && !$0.isHidden && onDisplay($0) }
+            let images = next.items.filter { $0.isVisualPrint && !$0.isHidden && onDisplay($0) }
             let overflow = images.contains { !safe.contains(GreedyPacking.bounds($0)) }
             if shrinking || fixedMoved || overflow {
                 let moving = images.filter { !$0.isKept }.map(\.id)

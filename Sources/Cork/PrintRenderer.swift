@@ -5,7 +5,16 @@ import CorkCore
 enum PrintRenderer {
     static let paper = NSColor(calibratedRed: 0.98, green: 0.97, blue: 0.94, alpha: 1)
 
-    static func draw(item: PrintItem, image: NSImage?, in bounds: CGRect, selected: Bool = false) {
+    static func imageRect(item: PrintItem) -> CGRect {
+        let inset = item.width * (item.style == .frame ? 0.12 : item.style == .polaroid ? 0.055 : 0.018)
+        let bottom = item.style == .polaroid ? item.width * 0.20 : inset
+        return CGRect(x: -item.width / 2 + inset, y: -item.height / 2 + inset,
+                      width: item.width - inset * 2, height: max(1, item.height - inset - bottom))
+    }
+
+    static func draw(item: PrintItem, image: NSImage?, in bounds: CGRect, selected: Bool = false, decorationsOnly: Bool = false) {
+        let inset = item.width * (item.style == .frame ? 0.12 : item.style == .polaroid ? 0.055 : 0.018)
+        let bottom = item.style == .polaroid ? item.width * 0.20 : inset
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         let transform = NSAffineTransform()
@@ -24,6 +33,7 @@ enum PrintRenderer {
             if selected { drawSelection(rect) }
             return
         }
+        if !decorationsOnly {
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.27)
@@ -34,10 +44,7 @@ enum PrintRenderer {
         NSBezierPath(rect: rect).fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        let inset = item.width * (item.style == .frame ? 0.12 : item.style == .polaroid ? 0.055 : 0.018)
-        let bottom = item.style == .polaroid ? item.width * 0.20 : inset
-        var imageRect = CGRect(x: rect.minX + inset, y: rect.minY + inset,
-                               width: rect.width - inset * 2, height: max(1, rect.height - inset - bottom))
+        var imageRect = imageRect(item: item)
         if item.style == .frame {
             let matte = rect.insetBy(dx: item.width * 0.038, dy: item.width * 0.038)
             paper.setFill(); NSBezierPath(rect: matte).fill()
@@ -57,6 +64,7 @@ enum PrintRenderer {
                 .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.darkGray, .paragraphStyle: paragraph])
         }
 
+        }
         if item.style == .tape {
             let width = min(86, item.width * 0.31), height = max(17, min(25, item.width * 0.085))
             let tape = CGRect(x: -width / 2, y: rect.minY - height * 0.42, width: width, height: height)

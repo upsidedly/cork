@@ -81,7 +81,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     @objc private func sessionActive() { model.environment.setSessionActive(true); model.controls.setSessionActive(true); model.desktop.pauseWidgets(false) }
     @objc private func activationChanged() { model.controls.refreshAccess(); model.environment.refreshWidgets() }
     @objc private func widgetsChanged() { model.environment.refreshWidgets() }
-    @objc private func motionChanged() { model.environment.updateMotionPreference() }
+    @objc private func motionChanged() { model.environment.updateMotionPreference(); model.desktop.motionPreferenceChanged() }
     @objc private func scheduleTimeChanged() { model.scheduleTimeChanged() }
 
     func openLibrary() {
@@ -113,7 +113,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         menu.addItem(menuItem("Open Cork…", #selector(showLibrary)))
         menu.addItem(menuItem("Minimize All Windows", #selector(minimizeAllWindows)))
         menu.addItem(.separator())
-        menu.addItem(menuItem("Add Images…", #selector(addImages), key: "o"))
+        menu.addItem(menuItem("Add Images or Videos…", #selector(addImages), key: "o"))
         menu.addItem(menuItem("Import from Pinterest…", #selector(importPinterest)))
         menu.addItem(menuItem("New Note", #selector(addNote), key: "n"))
         let roll = menuItem("Roll Wall", #selector(rollWall), key: "r"); roll.isEnabled = model.canRollWall; menu.addItem(roll)
@@ -152,7 +152,7 @@ final class CorkAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         appMenu.addItem(.separator()); appMenu.addItem(menuItem("Quit Cork", #selector(quit), key: "q"))
         let app = NSMenuItem(); app.submenu = appMenu; main.addItem(app)
         let fileMenu = NSMenu(); fileMenu.addItem(menuItem("Open Cork…", #selector(showLibrary), key: "l"))
-        fileMenu.addItem(menuItem("Add Images…", #selector(addImages), key: "o"))
+        fileMenu.addItem(menuItem("Add Images or Videos…", #selector(addImages), key: "o"))
         fileMenu.addItem(menuItem("Import from Pinterest…", #selector(importPinterest)))
         fileMenu.addItem(menuItem("New Note", #selector(addNote), key: "n"))
         fileMenu.addItem(menuItem("Roll Wall", #selector(rollWall), key: "r"))

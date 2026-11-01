@@ -45,7 +45,7 @@ def tool(name, arguments=None, error=False):
 try:
     assert rpc("initialize", {"protocolVersion": "2025-11-25", "clientInfo": {"name": "Cork smoke", "version": "1"}, "capabilities": {}})["serverInfo"]["name"] == "Cork"
     rpc("notifications/initialized", notification=True)
-    assert len(rpc("tools/list")["tools"]) == 22
+    assert len(rpc("tools/list")["tools"]) == 28
     initial = tool("cork_get_board")
     assert initial["ready"] and not initial["items"], "Use an empty isolated board"
     for index, style in enumerate(["tape", "pushpin", "polaroid", "frame"]):
