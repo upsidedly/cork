@@ -36,13 +36,15 @@ private enum PlaybackObservation {
     override var canBecomeMain: Bool { false }
 }
 
-@MainActor private final class WallpaperView: NSView {
+@MainActor final class WallpaperView: NSView {
     let image: NSImage
     private var videoLayer: AVPlayerLayer?
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
     private var observation: NSKeyValueObservation?
     var onDone: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
+    private(set) var previewSurface: VideoWallpaperSurface?
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -83,6 +85,7 @@ private enum PlaybackObservation {
     // Focus the desktop without raising it above prints or opening the library.
     // Hidden Finder icons remain covered, including their mouse hit targets.
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { onDoubleClick?(); return }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKey(); window?.makeFirstResponder(self)
     }
@@ -92,11 +95,26 @@ private enum PlaybackObservation {
         else { super.keyDown(with: event) }
     }
     func setPlaying(_ playing: Bool) { if playing { player?.play() } else { player?.pause() } }
-    var isPlaying: Bool { (player?.rate ?? 0) > 0 }
-    var mediaPlayer: AVPlayer? { player }
-    var loopCount: Int { looper?.loopCount ?? 0 }
-    var playbackTime: Double { let value = player?.currentTime().seconds ?? 0; return value.isFinite ? value : 0 }
+    var isPlaying: Bool { previewSurface?.isPlaying ?? ((player?.rate ?? 0) > 0) }
+    var mediaPlayer: AVPlayer? { previewSurface?.mediaPlayer ?? player }
+    var displayImage: NSImage { previewSurface?.poster ?? image }
+    var loopCount: Int { previewSurface?.loopCount ?? looper?.loopCount ?? 0 }
+    var playbackTime: Double { let value = previewSurface?.playbackTime ?? player?.currentTime().seconds ?? 0; return value.isFinite ? value : 0 }
+    func showPreview(_ surface: VideoWallpaperSurface) {
+        clearPreview(); previewSurface = surface; surface.frame = bounds
+        surface.autoresizingMask = [.width, .height]; addSubview(surface)
+        setAccessibilityValue("Expanded video wallpaper")
+        setAccessibilityHelp("Double-click or press Escape to return the video to its print.")
+        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Return video to print", handler: { [weak self] in
+            self?.onDone?(); return self != nil
+        })])
+    }
+    func clearPreview() {
+        previewSurface?.stop(); previewSurface?.removeFromSuperview(); previewSurface = nil
+        setAccessibilityValue(nil); setAccessibilityHelp(nil); setAccessibilityCustomActions(nil)
+    }
     func stop() {
+        clearPreview()
         observation?.invalidate(); observation = nil
         player?.pause(); looper?.disableLooping(); player?.removeAllItems()
         videoLayer?.player = nil; player = nil; looper = nil
@@ -121,19 +139,29 @@ final class DesktopEnvironment {
     @ObservationIgnored private var displayAwake = true
     @ObservationIgnored private var sessionActive = true
     @ObservationIgnored private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    @ObservationIgnored private let motionPreference: @MainActor () -> Bool
+    @ObservationIgnored private let presentingWindows: Bool
+    @ObservationIgnored private var preview: VideoWallpaperPreview?
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored var onDone: (() -> Void)?
 
-    init(wallpapers: URL) {
+    init(wallpapers: URL, systemWallpaper: SystemWallpaperSync? = nil, presentingWindows: Bool = true,
+         motionPreference: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.wallpapers = wallpapers
-        systemWallpaper = SystemWallpaperSync(journalURL: wallpapers.deletingLastPathComponent().appendingPathComponent("system-wallpaper.json"))
+        self.systemWallpaper = systemWallpaper ?? SystemWallpaperSync(journalURL: wallpapers.deletingLastPathComponent().appendingPathComponent("system-wallpaper.json"))
+        self.presentingWindows = presentingWindows; self.motionPreference = motionPreference; reduceMotion = motionPreference()
     }
-    var menuBarSynchronized: Bool { settings.wallpaper.kind != .system && systemWallpaper.synchronized }
+    var previewItemID: UUID? { preview?.item.id }
+    private var previewSnapshot: PrintItem? { preview?.item }
+    var currentPreviewSurface: VideoWallpaperSurface? { preview.flatMap { panels[$0.displayID]?.contentView as? WallpaperView }?.previewSurface }
+    var previewReturning: Bool { currentPreviewSurface?.returning ?? false }
+    var windowsVisible: Bool { panels.values.contains(where: \.isVisible) || widgetMasks.contains(where: \.isVisible) }
+    var menuBarSynchronized: Bool { (settings.wallpaper.kind != .system || currentPreviewSurface != nil) && systemWallpaper.synchronized }
     var windowNumbers: Set<Int> { Set(panels.values.map(\.windowNumber) + widgetMasks.map(\.windowNumber)) }
     var widgetCoverCount: Int { widgetMasks.count }
     var isVideoPlaying: Bool { panels.values.contains { ($0.contentView as? WallpaperView)?.isPlaying == true } }
-    var videoTime: Double { (panels.values.first?.contentView as? WallpaperView)?.playbackTime ?? 0 }
-    var videoLoops: Int { (panels.values.first?.contentView as? WallpaperView)?.loopCount ?? 0 }
+    var videoTime: Double { currentPreviewSurface?.playbackTime ?? (panels.values.first?.contentView as? WallpaperView)?.playbackTime ?? 0 }
+    var videoLoops: Int { currentPreviewSurface?.loopCount ?? (panels.values.first?.contentView as? WallpaperView)?.loopCount ?? 0 }
     var printLevel: NSWindow.Level {
         // Focus can reorder windows within a level. Prints must stay strictly
         // above the wallpaper even after the background becomes key.
@@ -142,20 +170,28 @@ final class DesktopEnvironment {
 
     func apply(_ settings: DesktopSettings) {
         let switchingToSystem = settings.wallpaper.kind == .system && self.settings.wallpaper.kind != .system
+        if let preview, self.settings.wallpaper != settings.wallpaper ||
+            !NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == preview.displayID }) ||
+            (currentPreviewSurface != nil && panels[preview.displayID]?.frame != DesktopWindows.screen(for: preview.displayID)?.frame) {
+            clearPreview(restore: false, notify: false)
+        }
         self.settings = settings
         let screens = NSScreen.screens
+        // A preview owns its native poster until it returns. Ordinary focus,
+        // widget and settings refreshes must not overwrite it with the base image.
+        if currentPreviewSurface != nil { syncPanels(); return }
         if settings.wallpaper.kind == .system {
             if switchingToSystem { mediaKey = ""; loadTask?.cancel(); loadTask = nil }
             do { try systemWallpaper.restore() }
             catch { problem = error.localizedDescription; loading = false; onChange?(); return }
         }
-        if settings.wallpaper.kind == .system && !settings.hideDesktopFiles && !settings.widgetsHidden {
+        if preview == nil && settings.wallpaper.kind == .system && !settings.hideDesktopFiles && !settings.widgetsHidden {
             stopPanels(); mediaKey = ""; loadTask?.cancel(); loading = false; problem = nil; iconsCovered = false; widgetsCovered = false; return
         }
         let sources: [(UInt32, URL)] = screens.compactMap { screen in
             guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
             let url: URL?
-            if settings.wallpaper.kind == .system { url = NSWorkspace.shared.desktopImageURL(for: screen) }
+            if settings.wallpaper.kind == .system { url = systemWallpaper.currentImageURL(for: number.uint32Value) }
             else if let filename = settings.wallpaper.posterFile ?? settings.wallpaper.assetFile { url = wallpapers.appendingPathComponent(filename) }
             else { url = nil }
             return url.map { (number.uint32Value, $0) }
@@ -166,7 +202,7 @@ final class DesktopEnvironment {
                 do { try systemWallpaper.apply(url, displays: sources.map(\.0)) }
                 catch { problem = error.localizedDescription }
             }
-            syncPanels(); return
+            installPreview(); syncPanels(); return
         }
         mediaKey = key; loadTask?.cancel(); loading = true; problem = nil
         loadTask = Task { [weak self] in
@@ -194,13 +230,15 @@ final class DesktopEnvironment {
                         self.problem = message; self.onChange?()
                     }
                     view.onDone = { [weak self] in self?.onDone?() }
+                    view.onDoubleClick = { [weak self] in self?.toggleCurrentPreview() }
                     panel.contentView = view
                     panels[id] = panel
                 }
-                loading = false; syncPanels(); onChange?()
+                loading = false; installPreview(); syncPanels(); onChange?()
             } catch is CancellationError {} catch {
                 guard mediaKey == key else { return }
                 loading = false; problem = error.localizedDescription
+                clearPreview(restore: false, notify: false)
                 // Keep a previously rendered wallpaper rather than flashing an empty screen.
                 if panels.isEmpty { iconsCovered = false }
                 onChange?()
@@ -217,8 +255,9 @@ final class DesktopEnvironment {
             // Finder icons remain above this layer when visible; empty wallpaper
             // still focuses Cork so its ordinary menu shortcuts work.
             panel.ignoresMouseEvents = false
-            panel.orderFrontRegardless()
-            (panel.contentView as? WallpaperView)?.setPlaying(!settings.wallpaper.paused && !reduceMotion && displayAwake && sessionActive)
+            if presentingWindows { panel.orderFrontRegardless() }
+            (panel.contentView as? WallpaperView)?.setPlaying(preview?.displayID != id && !settings.wallpaper.paused && !reduceMotion && displayAwake && sessionActive)
+            (panel.contentView as? WallpaperView)?.previewSurface?.setPlaying(displayAwake && sessionActive)
             if settings.widgetsHidden && !hide, let screen = DesktopWindows.screen(for: id), let base = panel.contentView as? WallpaperView {
                 for widget in widgets {
                     let rect = widget.rect.intersection(screen.frame)
@@ -228,9 +267,10 @@ final class DesktopEnvironment {
                     mask.hidesOnDeactivate = false; mask.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
                     mask.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 3)
                     mask.title = "Cork Widget Cover"
-                    mask.contentView = WidgetWallpaperView(image: base.image, player: base.mediaPlayer,
+                    let maskView = WidgetWallpaperView(image: base.displayImage, player: base.mediaPlayer,
                         canvas: CGRect(x: screen.frame.minX - rect.minX, y: screen.frame.minY - rect.minY, width: screen.frame.width, height: screen.frame.height))
-                    mask.orderFrontRegardless(); widgetMasks.append(mask)
+                    maskView.onDoubleClick = { [weak self] in self?.toggleCurrentPreview() }; mask.contentView = maskView
+                    if presentingWindows { mask.orderFrontRegardless() }; widgetMasks.append(mask)
                 }
             }
         }
@@ -238,13 +278,64 @@ final class DesktopEnvironment {
         widgetsCovered = settings.widgetsHidden && !panels.isEmpty
     }
     func refreshWidgets() {
-        if settings.wallpaper.kind != .system { apply(settings) }
+        if preview != nil || settings.wallpaper.kind != .system { apply(settings) }
         else if settings.widgetsHidden { syncPanels() }
         onChange?()
     }
     func setDisplayAwake(_ awake: Bool) { displayAwake = awake; syncPanels() }
     func setSessionActive(_ active: Bool) { sessionActive = active; syncPanels() }
-    func updateMotionPreference() { reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion; syncPanels() }
+    func updateMotionPreference() { reduceMotion = motionPreference(); currentPreviewSurface?.motionPreferenceChanged(); syncPanels() }
+    func togglePreview(_ value: VideoWallpaperPreview) {
+        if preview?.item.id == value.item.id { toggleCurrentPreview(); return }
+        clearPreview(restore: preview != nil, notify: false); preview = value
+        if panels[value.displayID] != nil { installPreview(); syncPanels() }
+        else { apply(settings) }
+        onChange?()
+    }
+    func reconcilePreview(board: Board, editing: Bool) {
+        guard let snapshot = previewSnapshot else { return }
+        if editing || board.hidden || snapshot.isHidden || board.items.first(where: { $0.id == snapshot.id }) != snapshot {
+            finishPreview(animated: false)
+        }
+    }
+    func toggleCurrentPreview() {
+        guard let preview else { return }
+        if let surface = currentPreviewSurface, surface.returning, let screen = DesktopWindows.screen(for: preview.displayID) {
+            surface.expand(from: preview.origin.relative(to: screen.frame), resume: true); syncPanels(); onChange?()
+        } else { finishPreview() }
+    }
+    func finishPreview(animated: Bool = true) {
+        guard let preview else { return }
+        guard animated, let surface = currentPreviewSurface, let screen = DesktopWindows.screen(for: preview.displayID) else {
+            clearPreview(restore: true); return
+        }
+        surface.collapse(to: preview.origin.relative(to: screen.frame)) { [weak self] in
+            guard self?.preview?.item.id == preview.item.id else { return }
+            self?.clearPreview(restore: true)
+        }
+    }
+    private func installPreview() {
+        guard let preview, currentPreviewSurface == nil, let panel = panels[preview.displayID],
+              let base = panel.contentView as? WallpaperView, let screen = DesktopWindows.screen(for: preview.displayID) else { return }
+        do {
+            try systemWallpaper.apply(preview.posterURL, displays: [preview.displayID])
+            let surface = VideoWallpaperSurface(preview: preview) { [weak self] in
+                guard let self, self.preview?.item.id == preview.item.id else { return }
+                self.clearPreview(restore: true); self.problem = "This video could not play as wallpaper. Your previous wallpaper is restored."; self.onChange?()
+            }
+            surface.reduceMotion = { [weak self] in self?.reduceMotion ?? true }
+            base.showPreview(surface); surface.expand(from: preview.origin.relative(to: screen.frame))
+            if presentingWindows && NSApp.isActive { panel.makeKey(); panel.makeFirstResponder(base) }
+        } catch {
+            clearPreview(restore: true); problem = error.localizedDescription; onChange?()
+        }
+    }
+    private func clearPreview(restore: Bool, notify: Bool = true) {
+        let hadPreview = preview != nil; preview = nil
+        for panel in panels.values { (panel.contentView as? WallpaperView)?.clearPreview() }
+        if restore && hadPreview { apply(settings) }
+        if notify && hadPreview { onChange?() }
+    }
     private func stopPanels() {
         stopWidgetMasks()
         for panel in panels.values { (panel.contentView as? WallpaperView)?.stop(); panel.close() }
@@ -254,6 +345,7 @@ final class DesktopEnvironment {
         for panel in widgetMasks { (panel.contentView as? WidgetWallpaperView)?.stop(); panel.close() }; widgetMasks.removeAll()
     }
     func stop() {
+        preview = nil
         mediaKey = ""; loadTask?.cancel(); loadTask = nil
         do { try systemWallpaper.restore() }
         catch { problem = error.localizedDescription }

@@ -24,7 +24,7 @@ final class DesktopWindows {
         NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id } ?? NSScreen.screens.first
     }
 
-    func refresh(board: Board, editing: Bool, selection: UUID?, baseLevel: NSWindow.Level) {
+    func refresh(board: Board, editing: Bool, selection: UUID?, baseLevel: NSWindow.Level, previewID: UUID? = nil) {
         let live = Set(board.items.filter { !$0.isHidden }.map(\.id))
         for id in Array(panels.keys) where !live.contains(id) {
             if let panel = panels.removeValue(forKey: id) { (panel.contentView as? WidgetPaperView)?.stop(); (panel.contentView as? VideoPrintView)?.stop(); panel.close() }
@@ -50,12 +50,13 @@ final class DesktopWindows {
                 } else if let video = item.video {
                     let printView = VideoPrintView(item: item, image: images[item.assetFile], videoURL: assets.appendingPathComponent(video.file))
                     printView.onFailure = { [weak self] message in self?.controller?.errorMessage = message }
+                    printView.onToggleWallpaper = { [weak self] preview in self?.controller?.toggleVideoWallpaper(preview) }
                     content = printView; view = printView
                 } else { let printView = PrintView(item: item, image: images[item.assetFile]); content = printView; view = printView }
                 view.onSelect = { [weak self] in self?.controller?.select(item.id) }
                 view.onChange = { [weak self] patch, revision in self?.controller?.updateFromUI(patch, revision: revision) }
                 view.onDelete = { [weak self] in self?.controller?.removeFromUI(item.id) }
-                view.onDone = { [weak self] in self?.controller?.setEditing(false) }
+                view.onDone = { [weak self] in self?.controller?.finishDesktopAction() }
                 view.onStyle = { [weak self] style in self?.controller?.updateFromUI(["id": .string(item.id.uuidString), "style": .string(style.rawValue)]) }
                 panel.contentView = content; panels[item.id] = panel
             }
@@ -86,9 +87,9 @@ final class DesktopWindows {
             (panel.contentView as? WidgetPaperView)?.surface?.updateState(item.widgetState ?? .object([:]))
             (panel.contentView as? WidgetPaperView)?.surface?.setPaused(widgetsPaused || board.hidden)
             if let video = panel.contentView as? VideoPrintView {
-                video.playbackPaused = widgetsPaused || board.hidden; video.syncPlayback()
+                video.playbackPaused = widgetsPaused || board.hidden || item.id == previewID; video.syncPlayback()
             }
-            if board.hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+            if board.hidden || item.id == previewID { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
         }
     }
     func close() { for panel in panels.values { (panel.contentView as? WidgetPaperView)?.stop(); (panel.contentView as? VideoPrintView)?.stop(); panel.close() }; panels.removeAll() }

@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import CorkCore
 
-private enum VideoStatusObservation {
+enum VideoStatusObservation {
     // AVFoundation invokes KVO on worker queues; only the delivered value enters UI isolation.
     static func observe(_ player: AVPlayerLooper, change: @escaping @MainActor @Sendable (Bool) -> Void) -> NSKeyValueObservation {
         player.observe(\.status, options: [.new, .initial]) { item, _ in
@@ -41,6 +41,7 @@ private enum VideoStatusObservation {
     private var generation = UUID()
     private(set) var failed = false
     var onFailure: ((String) -> Void)?
+    var onToggleWallpaper: ((VideoWallpaperPreview) -> Void)?
     var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var playbackPaused = false { didSet { if playbackPaused { stop() } } }
     var isPlaying: Bool { (player?.rate ?? 0) > 0 }
@@ -57,6 +58,8 @@ private enum VideoStatusObservation {
         super.init(item: item, image: image)
         setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Play or pause video", handler: { [weak self] in
             guard let self else { return false }; self.toggleKeyboardPlayback(); return true
+        }), NSAccessibilityCustomAction(name: "Use video as wallpaper", handler: { [weak self] in
+            self?.requestWallpaper() ?? false
         })])
     }
     required init?(coder: NSCoder) { nil }
@@ -65,7 +68,7 @@ private enum VideoStatusObservation {
         super.updateAccessibility()
         setAccessibilityLabel(item.title.isEmpty ? "\(item.style.title) video print" : item.title)
         setAccessibilityValue(failed ? "Video unavailable; still cover shown" : isPlaying ? "Playing silently" : "Still video cover")
-        setAccessibilityHelp(editing ? "Drag to move or resize this video print." : "Hover to play silently; move away to return to the still cover. Space plays or pauses. With Reduce Motion, use Space or the accessibility action.")
+        setAccessibilityHelp(editing ? "Drag to move or resize this video print." : "Hover to play silently. Space plays or pauses. Double-click or press Return to expand into the wallpaper; double-click the wallpaper or press Escape to return. With Reduce Motion, use Space for print playback.")
     }
 
     override func updateTrackingAreas() {
@@ -94,11 +97,30 @@ private enum VideoStatusObservation {
     }
     override func mouseDown(with event: NSEvent) {
         if editing { stop(); super.mouseDown(with: event); return }
+        if event.clickCount == 2 { _ = requestWallpaper(); return }
         NSApp.activate(ignoringOtherApps: true); window?.makeKey(); window?.makeFirstResponder(self)
     }
+    @discardableResult func requestWallpaper() -> Bool {
+        guard !editing, !playbackPaused, let window, let image, let video = item.video, let onToggleWallpaper else { return false }
+        let aperture = PrintRenderer.imageRect(item: item), angle = item.rotation * .pi / 180
+        func screenPoint(_ point: CGPoint) -> CGPoint {
+            let p = CGPoint(x: bounds.midX + point.x * cos(angle) - point.y * sin(angle),
+                            y: bounds.midY + point.x * sin(angle) + point.y * cos(angle))
+            return window.convertPoint(toScreen: convert(p, to: nil))
+        }
+        let center = screenPoint(CGPoint(x: aperture.midX, y: aperture.midY))
+        let edge = screenPoint(CGPoint(x: aperture.maxX, y: aperture.midY))
+        let time = hasPlayer ? playbackTime : video.posterTime
+        let displayID = (window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? item.displayID
+        let preview = VideoWallpaperPreview(item: item, displayID: displayID, videoURL: videoURL,
+            posterURL: videoURL.deletingLastPathComponent().appendingPathComponent(item.assetFile), poster: image,
+            origin: VideoWallpaperOrigin(center: center, size: aperture.size, angle: atan2(edge.y - center.y, edge.x - center.x)), startTime: time)
+        stop(); onToggleWallpaper(preview); return true
+    }
     override func keyDown(with event: NSEvent) {
+        if !editing && event.keyCode == 36 { _ = requestWallpaper(); return }
         if !editing && event.keyCode == 49 { toggleKeyboardPlayback(); return }
-        if !editing && event.keyCode == 53 { stop(); return }
+        if !editing && event.keyCode == 53 { stop(); onDone?(); return }
         super.keyDown(with: event)
     }
     override func resignFirstResponder() -> Bool {

@@ -27,6 +27,8 @@ Open Cork from the menu bar. Choose **Add Images or Videos…**, paste an image,
 
 Videos use the same paper treatments. They stay still until you hover, then loop silently. Move away and the cover returns. Click a video and press **Space** for keyboard playback; **Escape** stops it. Reduce Motion turns off hover playback while keeping this explicit control. MP4, MOV and M4V files up to 200 MB and ten minutes are supported. Cork measures five frames before including a video in a colour-matched collage.
 
+**Double-click a video** to zoom it into the wallpaper. **Double-click the wallpaper again**, or press **Escape**, to return the print and previous background. **Return** opens the same effect from a focused video. The preview stays behind app windows and keeps your saved layout intact; it reuses the existing clip. Reduce Motion removes the zoom.
+
 Choose **New Note** for editable text on **Flat** paper or a shaded **Sticky**. Check **Include in layout** to reserve its space, or untick it to float the note over your pictures. **Match collage colours** tints the paper to suit the visible photos.
 
 Choose **Edit Desktop** to drag, resize and rotate items. The library also has X/Y sliders and exact dimensions. An **eye** button hides an item and repacks the wall around it. **Keep in place** protects a print during future rolls. Finish with **Done** or **Esc**.

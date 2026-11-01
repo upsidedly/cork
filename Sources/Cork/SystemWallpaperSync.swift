@@ -94,6 +94,8 @@ struct SystemWallpaperImage: Codable, Equatable {
         }
     }
 
+    func currentImageURL(for displayID: UInt32) -> URL? { access.image(for: displayID)?.url }
+
     func apply(_ url: URL, displays: [UInt32]) throws {
         if let loadFailure { throw loadFailure }
         let desired = SystemWallpaperImage.cover(url)

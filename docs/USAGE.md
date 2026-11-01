@@ -18,6 +18,8 @@ A video looks like a still print until hovered, then loops silently. Moving away
 
 Video covers participate in layout and dominant-colour balance. Five spread-out frames are measured locally, and every sample must fit the requested colour pair before a video joins a matching roll. This is a bounded sample of the clip, not semantic analysis of every frame.
 
+Double-click the image area of a locked video print to expand it into the wallpaper. Double-click the wallpaper again to bring the print back, or use **Escape**. A focused video supports **Return** and the **Use video as wallpaper** accessibility action. This temporary view reuses the local clip, leaves the layout and saved wallpaper unchanged, and pauses the previous video wallpaper until you return. The native wallpaper uses the video cover so the menu bar follows it too. Editing, moving/hiding/removing the source, choosing another wallpaper or quitting ends the view. Automatic rolls wait while it is open. Reduce Motion makes the transition immediate while keeping explicitly requested playback.
+
 Choose **New Note** for editable text. **Flat** uses solid paper; **Sticky** adds shading and a curled corner. Choose a paper color, write your text, and select **Save Note**. Titles are optional.
 
 Each note has an **Include in layout** checkbox. Keep it checked to leave room for that note when filling or rolling the wall. Untick it to let pictures fill behind the note: it stays in its chosen position, above photos added by later rolls too. The choice works with both Flat and Sticky notes, saves automatically and supports Undo. Existing notes start checked.

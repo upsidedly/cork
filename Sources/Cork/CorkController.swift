@@ -74,12 +74,12 @@ final class CorkController {
         environment.onChange = { [weak self] in
             guard let self, self.ready else { return }
             if !self.environment.loading {
-                self.desktop.refresh(board: self.board, editing: self.editing, selection: self.selection, baseLevel: self.environment.printLevel)
+                self.desktop.refresh(board: self.board, editing: self.editing, selection: self.selection, baseLevel: self.environment.printLevel, previewID: self.environment.previewItemID)
             }
             self.onChange?()
         }
-        environment.onDone = { [weak self] in self?.setEditing(false) }
-        scheduleDriver.canRun = { [weak self] in guard let self else { return false }; return self.canRollWall && !self.editing }
+        environment.onDone = { [weak self] in self?.finishDesktopAction() }
+        scheduleDriver.canRun = { [weak self] in guard let self else { return false }; return self.canRollWall && !self.editing && self.environment.previewItemID == nil }
         scheduleDriver.onFire = { [weak self] schedule in try await self?.scheduledRoll(schedule) }
         scheduleDriver.onChange = { [weak self] in self?.onChange?() }
     }
@@ -154,11 +154,21 @@ final class CorkController {
     }
 
     func refresh() {
+        environment.reconcilePreview(board: board, editing: editing)
         environment.apply(board.desktop)
         controls.apply(board.desktop.desktopControls)
         scheduleDriver.apply(board.desktop.randomizationSchedule ?? RandomizationSchedule())
-        if !environment.loading { desktop.refresh(board: board, editing: editing, selection: selection, baseLevel: environment.printLevel) }
+        if !environment.loading { desktop.refresh(board: board, editing: editing, selection: selection, baseLevel: environment.printLevel, previewID: environment.previewItemID) }
         onChange?()
+    }
+    func toggleVideoWallpaper(_ value: VideoWallpaperPreview) {
+        guard ready, !busy, !editing, !board.hidden, !environment.loading,
+              board.items.first(where: { $0.id == value.item.id }) == value.item, !value.item.isHidden else { return }
+        environment.togglePreview(value)
+    }
+    func finishDesktopAction() {
+        if environment.previewItemID != nil { environment.finishPreview() }
+        else { setEditing(false) }
     }
     func select(_ id: UUID?) { selection = id; desktop.select(id); onChange?() }
     func setEditing(_ enabled: Bool) {
@@ -700,6 +710,8 @@ final class CorkController {
             "widgets_hidden": .bool(environment.widgetsCovered), "detected_widgets": .number(Double(environment.detectedWidgets)),
             "widget_cover_windows": .number(Double(environment.widgetCoverCount)),
             "menu_bar_wallpaper_synced": .bool(environment.menuBarSynchronized),
+            "expanded_video": environment.previewItemID.map { .string($0.uuidString) } ?? .null,
+            "returning_video": .bool(environment.previewReturning),
             "video_playing": .bool(environment.isVideoPlaying), "video_time": .number(environment.videoTime), "video_loops": .number(Double(environment.videoLoops)),
             "wallpaper_error": environment.problem.map(JSONValue.string) ?? .null
         ])

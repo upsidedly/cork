@@ -31,6 +31,7 @@ struct DesktopWidgetSurface {
     let image: NSImage
     let canvas: CGRect
     private var video: AVPlayerLayer?
+    var onDoubleClick: (() -> Void)?
     init(image: NSImage, player: AVPlayer?, canvas: CGRect) {
         self.image = image; self.canvas = canvas
         super.init(frame: .zero); wantsLayer = true; layer?.masksToBounds = true
@@ -51,7 +52,8 @@ struct DesktopWidgetSurface {
     override func layout() {
         super.layout(); CATransaction.begin(); CATransaction.setDisableActions(true); video?.frame = canvas; CATransaction.commit()
     }
-    override func mouseDown(with event: NSEvent) {}
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { if event.clickCount == 2 { onDoubleClick?() } }
     override func rightMouseDown(with event: NSEvent) {}
     func stop() { video?.player = nil }
 }
