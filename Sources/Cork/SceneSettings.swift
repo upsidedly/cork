@@ -10,7 +10,7 @@ struct SceneSettings: View {
             }))
             Picker("Colour palette", selection: Binding(get: { model.board.desktop.sceneOptions.colourPair != nil ? "custom" : model.board.desktop.sceneOptions.paletteID ?? "auto" }, set: { palette in
                 model.run {
-                    if palette == "custom" { try await model.setDesktop(colourPair: [.blue, .yellow]) }
+                    if palette == "custom" { try await model.setDesktop(colourPair: [.random, .random]) }
                     else { try await model.setDesktop(paletteID: palette) }
                 }
             })) {

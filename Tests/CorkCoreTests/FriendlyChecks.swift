@@ -4,7 +4,7 @@ import CorkCore
 @MainActor func favouritesRestoreSceneAndPreserveGlobalPreferences() throws {
     var saved = Board()
     saved.items = [PrintItem(assetFile: "", title: "Saved", style: .sticky, kind: .note, text: "Remember")]
-    saved.desktop.scenes = SceneOptions(); saved.desktop.scenes?.colourPair = [.blue, .yellow]
+    saved.desktop.scenes = SceneOptions(); saved.desktop.scenes?.colourPair = [.colour(.blue), .colour(.yellow)]
     saved.desktop.rotationTheme = "saved-mood"
     let favourite = FavouriteBoard(board: saved, name: "Blue day", now: Date(timeIntervalSince1970: 100))
     var current = Board(); current.desktop.hideDesktopFiles = true; current.desktop.hideWidgets = true
@@ -134,7 +134,7 @@ import CorkCore
         collection.photos[index].sourceBoard = "board-\(index % 5)"
         collection.photos[index].sourceBoardID = nil
     }
-    var custom = Board(); custom.desktop.scenes = SceneOptions(); custom.desktop.scenes?.colourPair = [.blue, .yellow]
+    var custom = Board(); custom.desktop.scenes = SceneOptions(); custom.desktop.scenes?.colourPair = [.colour(.blue), .colour(.yellow)]
     let rare = try WallRotation.roll(custom, collection: collection, display: display, seed: 76)
     let yellowArea = rare.items.filter { $0.colourProfile?.coverage(.yellow) == 1 }.reduce(0) { $0 + $1.width * $1.height }
     let totalArea = rare.items.reduce(0) { $0 + $1.width * $1.height }

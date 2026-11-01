@@ -27,7 +27,13 @@ public struct SceneOptions: Codable, Equatable, Sendable {
     public var matchColours = true
     public var matchWallpaper = true
     public var paletteID: String?
-    public var colourPair: [ColourFamily]?
+    /// Dominant (left), then secondary (right). Random choices resolve per roll.
+    public var colourPair: [ColourChoice]?
+    public var fixedColourPair: [ColourFamily]? {
+        guard let colourPair, colourPair.count == 2 else { return nil }
+        let fixed = colourPair.compactMap(\.family)
+        return fixed.count == 2 ? fixed : nil
+    }
     public var colourStrength: ColourSelectionStrength?
     public var selectedStrength: ColourSelectionStrength { colourStrength ?? .strong }
     public init() {}
@@ -35,7 +41,8 @@ public struct SceneOptions: Codable, Equatable, Sendable {
         if let paletteID, !ScenePalettes.all.contains(where: { $0.id == paletteID }) { throw CorkError("Unknown colour palette.") }
         if let colourPair {
             guard paletteID == nil else { throw CorkError("Choose a preset palette or two colours.") }
-            try ScenePalettes.pair(colourPair).validate()
+            let fixed = colourPair.compactMap(\.family)
+            guard colourPair.count == 2, Set(fixed).count == fixed.count else { throw CorkError("Choose different dominant and secondary colours, or Random.") }
         }
     }
 }

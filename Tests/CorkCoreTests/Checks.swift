@@ -24,6 +24,11 @@ func expectThrows<T>(_ body: () throws -> T) throws {
 @main enum CorkChecks {
     @MainActor static func main() async {
         let cases: [(String, @MainActor () async throws -> Void)] = [
+            ("Random colour choices migrate and persist", randomColourChoicesMigrateAndPersist),
+            ("Random colour slots keep their fixed roles", randomColourSlotsPreserveFixedRoles),
+            ("Dominant colour leads images and wallpaper", dominantColourControlsImageAreaAndWallpaper),
+            ("Random colour fills and display refits retain the scene", randomColourFillsAndDisplayRefitsRetainTheScene),
+            ("Random colours use viable families and native wallpapers", randomColoursPreferAvailableNativeWallpapers),
             ("Favourite restores scene and keeps global preferences", favouritesRestoreSceneAndPreserveGlobalPreferences),
             ("Favourite persistence, recovery and media reuse", favouritesPersistRecoverAndReuseMedia),
             ("Schedule defaults, intervals, validation and persistence", randomizationSchedulesValidatePersistAndCalculate),
@@ -90,12 +95,18 @@ func expectThrows<T>(_ body: () throws -> T) throws {
             ("Interactive widget state validates and persists", widgetItemsPersistAndValidateStateWithoutBecomingPhotos),
             ("New widgets avoid fixed items and each other", newWidgetsChooseSeparateSpaceAroundFixedItems)
         ]
+        let filters: [String]
+        if let index = CommandLine.arguments.firstIndex(of: "--filter"), CommandLine.arguments.indices.contains(index + 1) {
+            filters = CommandLine.arguments[index + 1].split(separator: "|").map(String.init)
+        } else { filters = [] }
+        let selected = cases.filter { name, _ in filters.isEmpty || filters.contains { name.localizedCaseInsensitiveContains($0) } }
+        guard !selected.isEmpty else { print("No checks matched --filter."); exit(1) }
         var failures = 0
-        for (name, body) in cases {
+        for (name, body) in selected {
             do { try await body(); print("PASS \(name)") }
             catch { failures += 1; print("FAIL \(name): \(error)") }
         }
-        print("\(cases.count - failures)/\(cases.count) checks passed")
+        print("\(selected.count - failures)/\(selected.count) checks passed")
         if failures > 0 { exit(1) }
     }
 }

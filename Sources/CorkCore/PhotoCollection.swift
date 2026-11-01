@@ -128,13 +128,23 @@ public enum WallRotation {
         var random = Generator(state: seed)
         let options = board.desktop.sceneOptions, matchColours = colourAware ?? options.matchColours
         try options.validate()
-        let customFamilies = matchColours && paletteID == nil ? options.colourPair : nil
+        let colourChoices = matchColours && paletteID == nil ? options.colourPair : nil
         let retained = board.items.filter { fillEmpty || $0.kind != .image || $0.isHidden || $0.isKept || ($0.displayID != display.id && $0.displayID != 0) }
         let anchors = retained.filter { $0.kind == .image && !$0.isHidden && ($0.displayID == display.id || $0.displayID == 0) }
         func metadata(_ item: PrintItem) -> CollectionPhoto? {
             collection.photos.first { $0.assetFile == item.assetFile || (item.sourceURL != nil && $0.sourceURL == item.sourceURL) }
         }
         let anchorColours = anchors.compactMap { $0.colours ?? metadata($0)?.palette }
+        let onWall = Set(board.items.compactMap(\.sourceURL)), retainedAssets = Set(retained.map(\.assetFile))
+        let retainedSources = Set(retained.compactMap(\.sourceURL))
+        let customFamilies: [ColourFamily]?
+        if let colourChoices {
+            let available = collection.photos.filter { !retainedAssets.contains($0.assetFile) && !retainedSources.contains($0.sourceURL) }
+            let profiles = available.compactMap(\.colourProfile) + anchors.compactMap { $0.colourProfile ?? metadata($0)?.colourProfile }
+            customFamilies = try ColourPairSelection.resolve(colourChoices, profiles: profiles, strength: options.selectedStrength,
+                previous: board.rotation?.scheme?.colourFamilies, fillEmpty: fillEmpty, wallpapers: wallpapers,
+                matchWallpaper: options.matchWallpaper, display: display, random: &random)
+        } else { customFamilies = nil }
         let theme: CollectionTheme, scheme: ColourScheme
         if let customFamilies {
             scheme = try ScenePalettes.pair(customFamilies)
@@ -154,12 +164,11 @@ public enum WallRotation {
         var wallpaper = options.matchWallpaper ? wallpapers.choose(scheme: scheme, mood: theme.id, display: display,
                                                                    previous: board.rotation?.wallpaperID, random: &random) : nil
         let free = try GreedyPacking.spaces(display: display, obstacles: retained, gap: 16, hideWidgets: board.desktop.widgetsHidden)
-        let onWall = Set(board.items.compactMap(\.sourceURL)), retainedAssets = Set(retained.map(\.assetFile))
-        let retainedSources = Set(retained.compactMap(\.sourceURL))
         let raw = collection.photos.filter { (customFamilies != nil || $0.themeIDs.contains(theme.id)) && !retainedAssets.contains($0.assetFile) && !retainedSources.contains($0.sourceURL) }
         let matches = raw.filter { ColourMatch.score($0.palette, against: scheme.colours) >= 0.50 }
         let neededBoards = min(4, Set(raw.map(\.sourceIdentity)).count)
         let paired = matchColours && scheme.majorColours != nil
+        let dominantShare = customFamilies == nil ? 0.5 : 0.65
         var pool = matchColours && matches.count >= min(8, raw.count) && Set(matches.map(\.sourceIdentity)).count >= neededBoards ? matches : raw
         if let customFamilies {
             guard raw.allSatisfy({ $0.colourProfile != nil }) else { throw CorkError("Cork is still classifying the collection's colours. Try again when analysis finishes.") }
@@ -218,7 +227,9 @@ public enum WallRotation {
                 }
             }
             let total = areas.values.reduce(0, +)
-            return result.score + usable * 0.35 * min(areas[0] ?? 0, areas[1] ?? 0) / max(1, total)
+            let first = (areas[0] ?? 0) / max(1, total), second = (areas[1] ?? 0) / max(1, total)
+            let balance = min(first / dominantShare, second / (1 - dominantShare))
+            return result.score + usable * 0.175 * balance
         }
         var best: GreedyPacking.Result?
         if usable >= 12_000 && target > 0 {
@@ -240,7 +251,7 @@ public enum WallRotation {
                 for _ in 0..<3 {
                     let result = GreedyPacking.pack(candidates: candidates, free: free, target: target, gap: 16,
                         availableArea: max(1, usable), variant: variant, mixStyles: true, sourceLimit: limit, initialSources: initialSources,
-                        balanceColours: paired, initialColourAreas: initialColourAreas)
+                        balanceColours: paired, initialColourAreas: initialColourAreas, dominantColourShare: dominantShare)
                     var counts = initialSources
                     for placement in result.placements { counts[placement.candidate.source, default: 0] += 1 }
                     let balanced = max(1, Int(ceil(Double(result.placements.count + anchors.count) * (sourceCount >= 3 ? 0.4 : 0.6))))

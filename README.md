@@ -37,7 +37,7 @@ Choose a mood in **Settings → Rotation**, or leave **Surprise me** selected. C
 
 **Fill Empty** adds pictures around the items you have placed. **Arrange → Fill Space** repacks the existing prints. Changing your display size refits the wall and can fill newly available space.
 
-Want your own combination? **Choose two colours** is at the top of Cork's main window, beside the dice. **Blue + Yellow**, **Red + Violet**, **Black + White** and other pairs search your whole saved library. Choose **Strong colours** or **Include accents**. Cork measures colour coverage locally, saves each image's classification and analyses future imports automatically.
+Want your own combination? **Choose two colours** is at the top of Cork's main window, beside the dice. The left slot is **Dominant**, guiding the wallpaper and larger colour share; the right is **Secondary**. Either can be **Random**: **Blue + Random** keeps blue dominant, **Random + Blue** keeps blue secondary, and **Random + Random** refreshes both. Fixed pairs such as **Red + Violet** work too. Choose **Strong colours** or **Include accents**. Cork measures colour coverage locally, saves each image's classification and analyses future imports automatically.
 
 Import a collection through Settings or let an agent prepare one using the [collection format](docs/COLLECTIONS.md). Moods are curated image groups; Cork uses their saved colours, proportions and source metadata to compose each wall. A fresh installation starts with an empty photo and wallpaper library. Rolls work offline after import.
 

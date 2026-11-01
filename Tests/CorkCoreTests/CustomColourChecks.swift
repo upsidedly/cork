@@ -29,7 +29,7 @@ private func customCollection(_ pair: [ColourFamily], accents: Bool = false) -> 
     return result
 }
 private func customBoard(_ pair: [ColourFamily], strength: ColourSelectionStrength = .strong) -> Board {
-    var result = Board(), options = SceneOptions(); options.colourPair = pair; options.colourStrength = strength
+    var result = Board(), options = SceneOptions(); options.colourPair = pair.map(ColourChoice.colour); options.colourStrength = strength
     result.desktop.scenes = options; return result
 }
 
@@ -117,11 +117,11 @@ private func customBoard(_ pair: [ColourFamily], strength: ColourSelectionStreng
     let result = try WallRotation.roll(customBoard(pair), collection: customCollection(pair), display: .init(id: 1, name: "Retina", width: 1512, height: 982, scale: 2), seed: 42, wallpapers: backgrounds)
     try expect(result.rotation?.wallpaperID == "blue" && result.rotation?.wallpaperMatched == true)
     backgrounds.wallpapers.removeAll { $0.id != "wrong-pink" }
-    backgrounds.wallpapers.append(.init(id: "dark-yellow", assetFile: "dark-yellow.jpg", title: "Quiet yellow", sourceURL: "https://example.com/dark",
-        sourceBoard: "wallpapers", palette: [ColourFamily.black.hex, ColourFamily.yellow.hex], themeIDs: [], width: 3840, height: 2400,
-        colourProfile: ImageColourProfile(coverages: [.black: 0.80, .yellow: 0.20])))
+    backgrounds.wallpapers.append(.init(id: "dark-blue", assetFile: "dark-blue.jpg", title: "Quiet blue", sourceURL: "https://example.com/dark",
+        sourceBoard: "wallpapers", palette: [ColourFamily.black.hex, ColourFamily.blue.hex], themeIDs: [], width: 3840, height: 2400,
+        colourProfile: ImageColourProfile(coverages: [.black: 0.80, .blue: 0.20])))
     let quiet = try WallRotation.roll(customBoard(pair), collection: customCollection(pair), display: .init(id: 1, name: "Retina", width: 1512, height: 982, scale: 2), seed: 42, wallpapers: backgrounds)
-    try expect(quiet.rotation?.wallpaperID == "dark-yellow" && quiet.rotation?.wallpaperMatched == true)
+    try expect(quiet.rotation?.wallpaperID == "dark-blue" && quiet.rotation?.wallpaperMatched == true)
 }
 
 @MainActor func colourCacheBackfillsAtomicallyAndReusesAllMedia() async throws {

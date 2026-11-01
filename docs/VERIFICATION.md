@@ -1,5 +1,15 @@
 # Verification
 
+## 0.9.0 build 18 ordered and Random colours — 31 October 2026
+
+**28 focused checks passed** across colour migration and MCP schemas, independent Random slots, dominant image area and wallpapers, source diversity, native dimensions, favourites, Fill Empty, display refits and the bounded large-library/rare-colour sample. Existing family-only preferences decode unchanged. Random preferences round-trip through boards and favourites while resolved families stay in the scene. Named paired palettes retain their prior balance. Only affected checks ran; unchanged importer authentication and scheduling-engine evidence is retained below.
+
+All three native arm64 products (Cork, its MCP bridge and importer) compile without warnings. An initial link was interrupted while opening existing objects; their files were confirmed readable and a fresh link completed without source changes. Strict deep signatures pass, and all three installed executable hashes match the verified build. The local app and bundled importer are build 18; published universal 0.9.0 assets are unchanged.
+
+Native controls visibly label the left picker **Dominant** and the right **Secondary**, with accessible names and Random in each menu. In an isolated root using 48 existing photo hardlinks and 45 eligible wallpaper hardlinks, Random + Blue changed Red + Blue to Green + Blue; Random + Random chose Red + Grey; Blue + Random changed Blue + Green to Blue + Yellow. Fixed slots remained fixed. The final blue scene had about 68% of its measured two-family image area in blue, a matching native-size wallpaper, and synchronized native menu-bar wallpaper. Restart preserved its exact preferences, concrete pair, items, wallpaper and revision. No new media was downloaded or copied.
+
+Installation preserved the user's latest board exactly at revision 348 with 25 items, saved Yellow + Blue choices, desktop settings, 449 collection images and 57 wallpapers. Login launch remains enabled and both custom global shortcuts remain registered. The installed controls show Yellow as Dominant and Blue as Secondary. After the ad hoc signature changed, runtime checks report Accessibility and trackpad monitoring unavailable; the existing system permission entry requires refresh before minimization or gesture monitoring can be claimed again. Screen Recording remains separate.
+
 ## 0.9.0 build 17 desktop focus correction — 30 October 2026
 
 The native arm64 app builds without warnings. Focused AppKit checks pass **4/4**: first-press selection/move and one commit, successive moves after the panel origin changes, finishing editing cancels a drag and locks the paper, and resizing preserves aspect ratio and position. They use hidden test windows and reuse the existing build cache.

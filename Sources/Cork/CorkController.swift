@@ -133,8 +133,24 @@ final class CorkController {
         colourTask?.cancel(); colourGeneration = UUID(); classifyingColours = false
     }
     func matchingColourPhotos() -> [CollectionPhoto] {
-        guard let pair = board.desktop.sceneOptions.colourPair else { return [] }
-        return collection.photos.filter { $0.colourProfile?.matches(pair, strength: board.desktop.sceneOptions.selectedStrength) == true }
+        let options = board.desktop.sceneOptions
+        guard let choices = options.colourPair else { return [] }
+        let pairs = options.fixedColourPair.map { [$0] } ?? ColourPairSelection.availablePairs(choices: choices,
+            profiles: collection.photos.compactMap(\.colourProfile), strength: options.selectedStrength)
+        return collection.photos.filter { photo in pairs.contains { photo.colourProfile?.matches($0, strength: options.selectedStrength) == true } }
+    }
+    var resolvedColourPair: [ColourFamily]? {
+        guard let choices = board.desktop.sceneOptions.colourPair, let pair = board.rotation?.scheme?.colourFamilies,
+              choices.count == 2, pair.count == 2, zip(choices, pair).allSatisfy({ $0.0.allows($0.1) }) else { return nil }
+        return pair
+    }
+    func chooseColour(_ choice: ColourChoice, at index: Int) {
+        guard (0..<2).contains(index) else { return }
+        var pair = board.desktop.sceneOptions.colourPair ?? [.random, .random]
+        pair[index] = choice
+        if let family = choice.family, pair[1 - index].family == family { pair[1 - index] = .random }
+        let next = pair
+        run { try await self.setDesktop(colourPair: next) }
     }
 
     func refresh() {
@@ -394,10 +410,10 @@ final class CorkController {
 
     var canRollWall: Bool {
         guard ready, !busy else { return false }
-        if let pair = board.desktop.sceneOptions.colourPair, board.desktop.sceneOptions.matchColours {
+        if let choices = board.desktop.sceneOptions.colourPair, board.desktop.sceneOptions.matchColours {
             guard !classifyingColours else { return false }
-            let matches = matchingColourPhotos()
-            return matches.count >= 6 && pair.allSatisfy { family in matches.contains { ($0.colourProfile?.coverage(family) ?? 0) >= board.desktop.sceneOptions.selectedStrength.minimumCoverage } }
+            return !ColourPairSelection.availablePairs(choices: choices, profiles: collection.photos.compactMap(\.colourProfile),
+                strength: board.desktop.sceneOptions.selectedStrength, maximum: 1).isEmpty
         }
         return !collection.eligibleThemes.isEmpty
     }
@@ -615,7 +631,7 @@ final class CorkController {
     func setDesktop(hideFiles: Bool? = nil, kind: WallpaperKind? = nil, path: String? = nil,
                     paused: Bool? = nil, defaultStyle: PrintStyle? = nil, rotationTheme: String? = nil, expectedRevision: Int? = nil,
                     hideWidgets: Bool? = nil, matchColours: Bool? = nil, matchWallpaper: Bool? = nil, paletteID: String? = nil,
-                    colourPair: [ColourFamily]? = nil, colourStrength: ColourSelectionStrength? = nil) async throws {
+                    colourPair: [ColourChoice]? = nil, colourStrength: ColourSelectionStrength? = nil) async throws {
         if path != nil && (kind == nil || kind == .system) { throw CorkError("Choose image or video when importing a wallpaper path.") }
         if colourPair != nil && paletteID != nil { throw CorkError("Choose a palette or two colours, not both.") }
         if let rotationTheme, rotationTheme != "auto", !collection.eligibleThemes.contains(where: { $0.id == rotationTheme }) {
@@ -818,7 +834,7 @@ final class CorkController {
                                      matchWallpaper: args["match_wallpaper"]?.bool, paletteID: args["palette"]?.string,
                                      colourPair: try args["colour_pair"].map { value in
                                          guard let names = value.array, names.count == 2 else { throw CorkError("Choose two colour families.") }
-                                         return try names.map { name in guard let raw = name.string, let family = ColourFamily(rawValue: raw) else { throw CorkError("Unknown colour family.") }; return family }
+                                         return try names.map { name in guard let raw = name.string, let choice = ColourChoice(rawValue: raw) else { throw CorkError("Unknown colour choice.") }; return choice }
                                      }, colourStrength: args["colour_strength"]?.string.flatMap(ColourSelectionStrength.init(rawValue:)))
             case "cork_set_login_item":
                 guard let enabled = args["enabled"]?.bool else { throw CorkError("enabled must be true or false.") }

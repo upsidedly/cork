@@ -107,7 +107,7 @@ enum GreedyPacking {
     static func pack(candidates: [Candidate], free initial: [Rect], target: Int, gap: Double,
                      availableArea: Double, variant: Int, minimum: Double = 100, mixStyles: Bool = false,
                      sourceLimit: Int? = nil, initialSources: [String: Int] = [:],
-                     balanceColours: Bool = false, initialColourAreas: [Int: Double] = [:]) -> Result {
+                     balanceColours: Bool = false, initialColourAreas: [Int: Double] = [:], dominantColourShare: Double = 0.5) -> Result {
         var result = Result(free: initial)
         var unused = candidates
         var styles: [PrintStyle: Int] = [:]
@@ -157,7 +157,7 @@ enum GreedyPacking {
                         if balanceColours, let weights = candidate.effectiveColourWeights {
                             let first = colourAreas[0] ?? 0, second = colourAreas[1] ?? 0
                             // Balance visible area, including kept prints, without defeating aspect-ratio fitting.
-                            colourBalance = 1 + 0.55 * (second - first) / max(average, first + second)
+                            colourBalance = 1 + 1.1 * (dominantColourShare * (first + second) - first) / max(average, first + second)
                                 * (weights[0] - weights[1]) / max(0.01, weights[0] + weights[1])
                         }
                         let score = bw * bh * (1 + 0.20 * edge + 0.22 * fill + 0.08 * variety

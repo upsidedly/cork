@@ -52,26 +52,22 @@ public struct WallpaperCollection: Codable, Equatable, Sendable {
     }
     func choose(scheme: ColourScheme, mood: String, display: DisplayInfo, previous: String?, imagePalettes: [[String]] = [],
                 imageProfiles: [ImageColourProfile] = [], random: inout WallRotation.Generator) -> CollectionWallpaper? {
-        if let pair = scheme.colourFamilies {
+        if let pair = scheme.colourFamilies, let primary = pair.first {
             let ranked = wallpapers.compactMap { item -> (CollectionWallpaper, Double)? in
                 guard item.automatic != false, item.supports(display), let profile = item.colourProfile,
                       let dominant = profile.dominantFamily else { return nil }
                 var affinity = 0.45
-                if pair.contains(dominant) {
+                if dominant == primary {
                     guard profile.matches(pair, strength: .strong), imageProfiles.isEmpty ||
                         imageProfiles.filter({ $0.coverage(dominant) >= 0.04 }).count >= max(1, Int(ceil(Double(imageProfiles.count) * 0.20))) else { return nil }
                     affinity = 1 + profile.coverage(dominant) * 0.12
                 } else {
                     guard dominant.isNeutral else { return nil }
-                    let represented = pair.filter { family in
-                        !family.isNeutral && profile.coverage(family) >= 0.10 && (imageProfiles.isEmpty ||
-                            imageProfiles.filter { $0.coverage(family) >= 0.04 }.count >= max(1, Int(ceil(Double(imageProfiles.count) * 0.20))))
-                    }
-                    if !represented.isEmpty && profile.matches(pair, strength: .strongAndAccents) {
-                        affinity = 0.88 + represented.reduce(0) { $0 + profile.coverage($1) } * 0.1
-                    } else {
-                        guard profile.colours.filter({ !$0.family.isNeutral }).reduce(0, { $0 + $1.coverage }) <= 0.10 else { return nil }
-                    }
+                    // Quiet neutral paper can carry the dominant colour as an
+                    // accent. The secondary colour cannot take over the backdrop.
+                    guard profile.coverage(primary) >= 0.10, profile.matches(pair, strength: .strongAndAccents),
+                          imageProfiles.isEmpty || imageProfiles.filter({ $0.coverage(primary) >= 0.04 }).count >= max(1, Int(ceil(Double(imageProfiles.count) * 0.20))) else { return nil }
+                    affinity = 0.88 + profile.coverage(primary) * 0.1
                 }
                 return (item, affinity + (item.id != previous ? 0.02 : 0))
             }.sorted { $0.1 > $1.1 }
