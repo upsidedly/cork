@@ -14,6 +14,8 @@ The installed Accessibility entry was refreshed through the scoped system reset 
 
 Daily sync remains disabled on this user's installation pending explicit approval for recurring profile-cookie access. No browser bookmark or persistent job was created, and no live daily Pinterest authentication/import is claimed. The earlier one-time Pinterest connection evidence below applies to the existing foreground connection path; it does not establish background Keychain access. Intel hardware and older macOS runtimes were not exercised.
 
+The 0.11.0 universal DMG is 6.9 MB. Its mounted read-only payload contains only Cork, the Applications link, AGPL license and install note. All three packaged executables contain both architecture slices and match the installed hashes; strict deep signatures, image integrity and the companion SHA-256 check passed. The image was detached afterward and release staging removed. The build remains ad hoc signed and unnotarized.
+
 Native verdict: **ACCEPT** for the installed video correction, default-off daily-sync feature and applicable fixture/native integration evidence. Personal daily activation remains a separate permission-dependent step.
 
 ## 0.9.0 build 18 ordered and Random colours — 31 October 2026
