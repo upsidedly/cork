@@ -276,7 +276,9 @@ final class DesktopEnvironment {
         stopWidgetMasks()
         for (id, panel) in panels {
             if let screen = DesktopWindows.screen(for: id) { panel.setFrame(screen.frame, display: true) }
-            panel.level = NSWindow.Level(rawValue: hide ? Int(CGWindowLevelForKey(.desktopIconWindow)) + (settings.widgetsHidden ? 3 : 1) : Int(CGWindowLevelForKey(.desktopWindow)) + 1)
+            let coversDesktop = preview?.displayID == id && currentPreviewSurface != nil
+            panel.level = NSWindow.Level(rawValue: coversDesktop ? Int(CGWindowLevelForKey(.desktopIconWindow)) + 5 :
+                hide ? Int(CGWindowLevelForKey(.desktopIconWindow)) + (settings.widgetsHidden ? 3 : 1) : Int(CGWindowLevelForKey(.desktopWindow)) + 1)
             // Finder icons remain above this layer when visible; empty wallpaper
             // still focuses Cork so its ordinary menu shortcuts work.
             panel.ignoresMouseEvents = false
@@ -360,6 +362,7 @@ final class DesktopEnvironment {
         let hadPreview = preview != nil; preview = nil
         for panel in panels.values { (panel.contentView as? WallpaperView)?.clearPreview() }
         if restore && hadPreview { apply(settings) }
+        else if hadPreview { syncPanels() }
         if notify && hadPreview { onChange?() }
     }
     private func stopPanels() {

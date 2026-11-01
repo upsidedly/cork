@@ -6,6 +6,7 @@ final class DesktopWindows {
     private var panels: [UUID: PrintPanel] = [:]
     private var images: [String: NSImage] = [:]
     private var widgetsPaused = false
+    private var presentationPaused: Set<UUID> = []
     let assets: URL
     weak var controller: CorkController?
     init(assets: URL) { self.assets = assets }
@@ -25,6 +26,9 @@ final class DesktopWindows {
     }
 
     func refresh(board: Board, editing: Bool, selection: UUID?, baseLevel: NSWindow.Level, previewID: UUID? = nil) {
+        let previewScreen = previewID.flatMap { id in board.items.first(where: { $0.id == id }) }.flatMap { Self.screen(for: $0.displayID) }
+        let previewDisplay = previewScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        presentationPaused.removeAll(keepingCapacity: true)
         let live = Set(board.items.filter { !$0.isHidden }.map(\.id))
         for id in Array(panels.keys) where !live.contains(id) {
             if let panel = panels.removeValue(forKey: id) { (panel.contentView as? WidgetPaperView)?.stop(); (panel.contentView as? VideoPrintView)?.stop(); panel.close() }
@@ -32,6 +36,8 @@ final class DesktopWindows {
         let files = Set(board.items.map(\.assetFile)); images = images.filter { files.contains($0.key) }
         for item in board.itemsBackToFront {
             guard let screen = Self.screen(for: item.displayID) else { continue }
+            let covered = previewDisplay.map { $0 == (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) } ?? false
+            if board.hidden || covered { presentationPaused.insert(item.id) }
             let panel: PrintPanel
             if let existing = panels[item.id] { panel = existing }
             else {
@@ -85,9 +91,9 @@ final class DesktopWindows {
                 view.updateAccessibility(); view.needsDisplay = true
             }
             (panel.contentView as? WidgetPaperView)?.surface?.updateState(item.widgetState ?? .object([:]))
-            (panel.contentView as? WidgetPaperView)?.surface?.setPaused(widgetsPaused || board.hidden)
+            (panel.contentView as? WidgetPaperView)?.surface?.setPaused(widgetsPaused || presentationPaused.contains(item.id))
             if let video = panel.contentView as? VideoPrintView {
-                video.playbackPaused = widgetsPaused || board.hidden || item.id == previewID; video.syncPlayback()
+                video.playbackPaused = widgetsPaused || presentationPaused.contains(item.id); video.syncPlayback()
             }
             if board.hidden || item.id == previewID { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
         }
@@ -103,9 +109,9 @@ final class DesktopWindows {
     }
     func pauseWidgets(_ paused: Bool) {
         widgetsPaused = paused
-        for panel in panels.values {
-            (panel.contentView as? WidgetPaperView)?.surface?.setPaused(paused)
-            (panel.contentView as? VideoPrintView)?.playbackPaused = paused
+        for (id, panel) in panels {
+            (panel.contentView as? WidgetPaperView)?.surface?.setPaused(paused || presentationPaused.contains(id))
+            (panel.contentView as? VideoPrintView)?.playbackPaused = paused || presentationPaused.contains(id)
         }
     }
     func reloadWidgets() {

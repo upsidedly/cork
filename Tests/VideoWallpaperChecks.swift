@@ -102,6 +102,9 @@ import CorkCore
         guard let surface = environment.currentPreviewSurface, let base = surface.superview as? WallpaperView else { throw CorkError("Missing expanded surface") }
         try require(surface.muted && surface.hasPlayer && surface.animating && surface.imageBounds.size == screen.frame.size && !environment.windowsVisible,
             "The explicit preview must play silently, zoom to the display and stay out of foreground windows.")
+        try require((base.window?.level.rawValue ?? Int.min) > environment.printLevel.rawValue &&
+            (base.window?.level.rawValue ?? Int.max) < NSWindow.Level.normal.rawValue,
+            "Expanded video must cover every desktop print and widget while remaining below normal application windows.")
         try require(access.images[id]?.url == posterURL && settings.wallpaper.assetFile == "base.png", "Native tint must use the video cover without changing saved wallpaper settings.")
         base.mouseDown(with: try doubleClick(base.window?.windowNumber ?? 0))
         try require(environment.previewReturning, "A second double-click must return the print.")
@@ -114,6 +117,8 @@ import CorkCore
         mask.mouseDown(with: try doubleClick(base.window?.windowNumber ?? 0)); mask.stop()
         try await waitUntil { environment.previewItemID == nil }
         try require(!surface.hasPlayer && access.images[id]?.url == baseURL && !environment.windowsVisible, "Returning must release decoding and restore the exact base wallpaper.")
+        try require((base.window?.level.rawValue ?? Int.max) < environment.printLevel.rawValue,
+            "Returning must put the wallpaper below the unchanged collage again.")
         print("PASS reversible zoom, rapid toggles, native poster synchronization and no media copies")
 
         preferences.reduced = true; environment.updateMotionPreference(); environment.togglePreview(preview)
@@ -188,6 +193,14 @@ import CorkCore
         try await waitUntil { environment.previewItemID == nil }
         try require(environment.problem != nil && access.images[id]?.url == baseURL && !environment.windowsVisible, "Unavailable media must return to the original wallpaper and report its error.")
         print("PASS unavailable video recovery")
-        print("7/7 native video wallpaper checks passed; hidden windows and injected native wallpaper access.")
+        environment.togglePreview(preview)
+        guard let cancelledBase = environment.currentPreviewSurface?.superview as? WallpaperView else { throw CorkError("Missing preview before wallpaper change") }
+        var unavailable = settings; unavailable.wallpaper.assetFile = "missing-wallpaper.png"
+        environment.apply(unavailable); try await waitUntil { !environment.loading }
+        try require(environment.previewItemID == nil && environment.problem != nil &&
+            (cancelledBase.window?.level.rawValue ?? Int.max) < environment.printLevel.rawValue,
+            "Even a failed replacement wallpaper must uncover the unchanged collage after cancelling a video.")
+        print("PASS failed wallpaper replacement restores collage layers")
+        print("8/8 native video wallpaper checks passed; hidden windows and injected native wallpaper access.")
     }
 }
